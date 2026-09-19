@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from backlot import server as server_mod
+from backlot import settings as settings_mod
 from backlot import state as state_mod
 
 
@@ -90,6 +91,181 @@ class TestBacklotServerApi:
         response = client.get("/api/health")
         assert response.status_code == 200
         assert response.json() == {"ok": True, "app": "backlot"}
+
+    def test_provider_settings_are_masked_and_persisted_locally(self, client, tmp_path, monkeypatch):
+        env_path = tmp_path / ".env"
+        monkeypatch.setattr(settings_mod, "ENV_PATH", env_path)
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.delenv("OPENMONTAGE_COST_PROFILE", raising=False)
+        monkeypatch.delenv("OPENMONTAGE_BUDGET_USD", raising=False)
+
+        initial = client.get("/api/settings/providers")
+        assert initial.status_code == 200
+        assert initial.json()["cost_profile"] == "balanced"
+        assert initial.json()["budget_usd"] is None
+        fal = next(item for item in initial.json()["providers"] if item["key"] == "FAL_KEY")
+        assert fal["configured"] is False
+        assert fal["masked"] is None
+
+        saved = client.put(
+            "/api/settings/providers",
+            json={"updates": {"FAL_KEY": "fal-secret-1234"}, "clear": []},
+        )
+        assert saved.status_code == 200
+        assert "fal-secret-1234" not in saved.text
+        fal = next(item for item in saved.json()["providers"] if item["key"] == "FAL_KEY")
+        assert fal["configured"] is True
+        assert fal["masked"] == "••••1234"
+        assert 'FAL_KEY="fal-secret-1234"' in env_path.read_text(encoding="utf-8")
+        assert env_path.stat().st_mode & 0o777 == 0o600
+
+        cleared = client.put(
+            "/api/settings/providers",
+            json={"updates": {}, "clear": ["FAL_KEY"]},
+        )
+        assert cleared.status_code == 200
+        fal = next(item for item in cleared.json()["providers"] if item["key"] == "FAL_KEY")
+        assert fal["configured"] is False
+        assert 'FAL_KEY=' in env_path.read_text(encoding="utf-8")
+
+    def test_local_model_settings_are_exposed_and_persisted(self, client, tmp_path, monkeypatch):
+        env_path = tmp_path / ".env"
+        monkeypatch.setattr(settings_mod, "ENV_PATH", env_path)
+        initial = client.get("/api/settings/providers").json()
+        local_keys = {item["key"] for item in initial["local_settings"]}
+        assert "VIDEO_GEN_LOCAL_ENABLED" in local_keys
+        assert "VIDEO_GEN_LOCAL_MODEL" in local_keys
+
+        saved = client.put(
+            "/api/settings/providers",
+            json={
+                "updates": {
+                    "VIDEO_GEN_LOCAL_ENABLED": "true",
+                    "VIDEO_GEN_LOCAL_MODEL": "ltx2-local",
+                    "COMFYUI_SERVER_URL": "http://localhost:8188",
+                },
+                "clear": [],
+            },
+        )
+        assert saved.status_code == 200
+        values = {item["key"]: item["value"] for item in saved.json()["local_settings"]}
+        assert values["VIDEO_GEN_LOCAL_ENABLED"] == "true"
+        assert values["VIDEO_GEN_LOCAL_MODEL"] == "ltx2-local"
+        assert 'VIDEO_GEN_LOCAL_MODEL="ltx2-local"' in env_path.read_text(encoding="utf-8")
+
+    def test_free_model_catalog_reports_tool_readiness(self, client):
+        response = client.get("/api/free-models")
+        assert response.status_code == 200
+        catalog = response.json()
+        assert {item["tool"] for item in catalog} >= {
+            "local_diffusion", "wan_video", "piper_tts", "transcriber",
+        }
+        assert all("available" in item and "requirements" in item for item in catalog)
+
+    def test_runtime_status_exposes_production_dependencies(self, client):
+        response = client.get("/api/runtime")
+        assert response.status_code == 200
+        payload = response.json()
+        assert {"ffmpeg", "ffprobe", "node", "npm", "npx", "remotion"} <= payload.keys()
+        assert {"available", "path", "version"} <= payload["ffmpeg"].keys()
+        assert {"available", "path", "version"} <= payload["node"].keys()
+        assert "available" in payload["remotion"]
+
+    def test_cost_settings_are_persisted_and_validated(self, client, tmp_path, monkeypatch):
+        env_path = tmp_path / ".env"
+        monkeypatch.setattr(settings_mod, "ENV_PATH", env_path)
+        monkeypatch.delenv("OPENMONTAGE_COST_PROFILE", raising=False)
+        monkeypatch.delenv("OPENMONTAGE_BUDGET_USD", raising=False)
+
+        saved = client.put(
+            "/api/settings/providers",
+            json={"updates": {}, "clear": [], "cost_profile": "economy", "budget_usd": 1.5},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["cost_profile"] == "economy"
+        assert saved.json()["budget_usd"] == 1.5
+        env_text = env_path.read_text(encoding="utf-8")
+        assert 'OPENMONTAGE_COST_PROFILE="economy"' in env_text
+        assert 'OPENMONTAGE_BUDGET_USD="1.5"' in env_text
+
+        invalid_profile = client.put(
+            "/api/settings/providers",
+            json={"updates": {}, "clear": [], "cost_profile": "unlimited"},
+        )
+        assert invalid_profile.status_code == 400
+        assert "cost_profile" in invalid_profile.json()["detail"]
+
+        cleared = client.put(
+            "/api/settings/providers",
+            json={"updates": {}, "clear": [], "cost_profile": "quality", "budget_usd": None},
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["cost_profile"] == "quality"
+        assert cleared.json()["budget_usd"] is None
+
+    def test_settings_page_is_available(self, client):
+        page = client.get("/settings")
+        assert page.status_code == 200
+        assert "Cài đặt API" in page.text
+        assert "/ui/settings.js" in page.text
+
+    def test_workflow_catalog_exposes_pipeline_menu(self, client):
+        response = client.get("/api/workflows")
+        assert response.status_code == 200
+        workflows = response.json()
+        names = {workflow["name"] for workflow in workflows}
+        assert "cinematic" in names
+        assert "documentary-montage" in names
+        assert all(workflow["stages"] for workflow in workflows if workflow["name"] != "framework-smoke")
+        assert all("description" in workflow for workflow in workflows)
+
+    def test_create_project_initializes_workspace_and_rejects_duplicates(self, client, projects_root):
+        created = client.post(
+            "/api/projects",
+            json={
+                "project_id": "product-launch",
+                "title": "Product Launch",
+                "pipeline_type": "cinematic",
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["url"] == "/p/product-launch"
+        marker = projects_root / "product-launch" / "project.json"
+        assert marker.is_file()
+        marker_data = json.loads(marker.read_text(encoding="utf-8"))
+        assert marker_data["title"] == "Product Launch"
+        assert marker_data["pipeline_type"] == "cinematic"
+        assert (projects_root / "product-launch" / "assets" / "images").is_dir()
+
+        duplicate = client.post(
+            "/api/projects",
+            json={
+                "project_id": "product-launch",
+                "title": "Another title",
+                "pipeline_type": "animation",
+            },
+        )
+        assert duplicate.status_code == 409
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"project_id": "Bad ID", "title": "Demo", "pipeline_type": "cinematic"},
+            {"project_id": "demo", "title": "Demo", "pipeline_type": "missing"},
+            {"project_id": "demo", "title": "", "pipeline_type": "cinematic"},
+        ],
+    )
+    def test_create_project_validates_input(self, client, payload):
+        response = client.post("/api/projects", json=payload)
+        assert response.status_code == 400
+
+    def test_provider_settings_reject_unknown_keys(self, client):
+        response = client.put(
+            "/api/settings/providers",
+            json={"updates": {"NOT_A_REAL_KEY": "secret"}, "clear": []},
+        )
+        assert response.status_code == 400
+        assert "Unknown provider setting" in response.json()["detail"]
 
     def test_projects_shape_and_state(self, client, projects_root):
         _make_project(projects_root, "film")

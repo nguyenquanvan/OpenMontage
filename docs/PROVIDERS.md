@@ -74,10 +74,15 @@ TENCENT_TOKENHUB_API_KEY=    # Tencent Hunyuan cloud video via TokenHub API
 # LOCAL (no keys needed — just GPU + install)
 VIDEO_GEN_LOCAL_ENABLED=     # Set to "true" for local video gen
 VIDEO_GEN_LOCAL_MODEL=       # wan2.2-ti2v-5b, wan2.1-1.3b, wan2.1-14b, hunyuan-1.5, ltx2-local, cogvideo-5b
+LOCAL_IMAGE_MODEL=           # Optional diffusers model id, e.g. stabilityai/stable-diffusion-2-1-base
+WHISPER_MODEL_SIZE=          # tiny, base, small, medium, large-v2, large-v3
+PIPER_MODEL=                 # Optional Piper voice model path/name
 
 # COMFYUI (optional overrides; localhost:8188 is the default)
 COMFYUI_SERVER_URL=          # Local ComfyUI server for shared workflows
 COMFYUI_VIDEO_SERVER_URL=    # Optional video-specific ComfyUI server
+COMFYUI_IMAGE_SERVER_URL=    # Optional image-specific ComfyUI server
+COMFYUI_MUSIC_SERVER_URL=    # Optional music-specific ComfyUI server
 ```
 
 ---

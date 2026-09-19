@@ -8,6 +8,7 @@ are not available.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -115,7 +116,7 @@ class Transcriber(BaseTool):
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])
-        model_size = inputs.get("model_size", "base")
+        model_size = inputs.get("model_size") or os.environ.get("WHISPER_MODEL_SIZE", "base")
         language = inputs.get("language")
         diarize = inputs.get("diarize", False)
         output_dir = Path(inputs.get("output_dir", input_path.parent))

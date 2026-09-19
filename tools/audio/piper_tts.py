@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
+import os
 from pathlib import Path
 from typing import Any
 
@@ -123,7 +124,7 @@ class PiperTTS(BaseTool):
         proc = subprocess.run(
             [
                 "piper",
-                "--model", inputs.get("model", "en_US-lessac-medium"),
+                "--model", inputs.get("model") or os.environ.get("PIPER_MODEL", "en_US-lessac-medium"),
                 "--speaker", str(inputs.get("speaker_id", 0)),
                 "--length-scale", str(inputs.get("length_scale", 1.0)),
                 "--sentence-silence", str(inputs.get("sentence_silence", 0.3)),
@@ -144,12 +145,12 @@ class PiperTTS(BaseTool):
             success=True,
             data={
                 "provider": self.provider,
-                "model": inputs.get("model", "en_US-lessac-medium"),
+                "model": inputs.get("model") or os.environ.get("PIPER_MODEL", "en_US-lessac-medium"),
                 "speaker_id": inputs.get("speaker_id", 0),
                 "text_length": len(inputs["text"]),
                 "output": str(output_path),
                 "format": "wav",
             },
             artifacts=[str(output_path)],
-            model=inputs.get("model", "en_US-lessac-medium"),
+            model=inputs.get("model") or os.environ.get("PIPER_MODEL", "en_US-lessac-medium"),
         )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -18,7 +19,17 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from lib.checkpoint import init_project
+from lib.pipeline_loader import load_pipeline_readonly
 from backlot.state import PROJECTS_DIR, REPO_ROOT, list_projects, load_board_state, summarize_project
+from backlot.settings import (
+    settings_status,
+    update_cost_settings,
+    update_provider_settings,
+    validate_cost_settings,
+)
+from backlot.free_models import free_model_catalog
+from lib.runtime import runtime_status
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
 THUMB_CACHE_DIR = REPO_ROOT / ".backlot" / "thumbs"
@@ -28,6 +39,9 @@ THUMB_WIDTHS = (320, 640, 960)
 _IGNORE_PARTS = {"node_modules", ".git", "__pycache__", ".cache"}
 
 SSE_HEARTBEAT_SECONDS = 15
+PROJECT_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+MAX_PROJECT_ID_LENGTH = 80
+MAX_PROJECT_TITLE_LENGTH = 200
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -108,6 +122,43 @@ def _cached_summaries() -> list[dict]:
     return summaries
 
 
+def _workflow_catalog() -> list[dict]:
+    """Return the user-facing catalog derived from pipeline manifests."""
+    from lib.pipeline_loader import PIPELINE_DEFS_DIR, load_pipeline
+
+    workflows = []
+    for path in sorted(PIPELINE_DEFS_DIR.glob("*.yaml")):
+        if path.stem == "framework-smoke":
+            continue
+        try:
+            manifest = load_pipeline(path.stem)
+        except Exception:
+            continue
+        orchestration = manifest.get("orchestration") or {}
+        reference_input = manifest.get("reference_input") or {}
+        stages = [
+            {
+                "name": stage.get("name"),
+                "gated": bool(stage.get("human_approval_default", False)),
+            }
+            for stage in manifest.get("stages", [])
+            if isinstance(stage, dict) and stage.get("name")
+        ]
+        workflows.append({
+            "name": manifest.get("name", path.stem),
+            "version": manifest.get("version"),
+            "description": " ".join(str(manifest.get("description", "")).split()),
+            "category": manifest.get("category", "custom"),
+            "stability": manifest.get("stability", "beta"),
+            "default_checkpoint_policy": manifest.get("default_checkpoint_policy", "guided"),
+            "budget_default_usd": orchestration.get("budget_default_usd"),
+            "max_wall_time_minutes": orchestration.get("max_wall_time_minutes"),
+            "reference_input": bool(reference_input.get("supported", False)),
+            "stages": stages,
+        })
+    return workflows
+
+
 # Watch-loop hot path: pure string comparison, no per-path filesystem calls
 # (change batches can be thousands of paths during a render).
 import os as _os
@@ -171,9 +222,97 @@ def create_app() -> FastAPI:
     async def health() -> dict:
         return {"ok": True, "app": "backlot"}
 
+    @app.get("/api/settings/providers")
+    async def provider_settings() -> dict:
+        return settings_status()
+
+    @app.put("/api/settings/providers")
+    async def save_provider_settings(payload: dict) -> dict:
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Payload phải là object")
+        updates = payload.get("updates", {}) if isinstance(payload, dict) else {}
+        clear = payload.get("clear", []) if isinstance(payload, dict) else []
+        if not isinstance(updates, dict) or not isinstance(clear, list):
+            raise HTTPException(status_code=400, detail="updates phải là object và clear phải là mảng")
+        try:
+            cost_kwargs = {}
+            if "cost_profile" in payload:
+                cost_kwargs["profile"] = payload["cost_profile"]
+            if "budget_usd" in payload:
+                cost_kwargs["budget_usd"] = payload["budget_usd"]
+            validate_cost_settings(**cost_kwargs)
+            await asyncio.to_thread(update_provider_settings, updates, clear)
+            await asyncio.to_thread(update_cost_settings, **cost_kwargs)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"ok": True, **settings_status()}
+
+    @app.get("/api/free-models")
+    async def free_models() -> list[dict]:
+        return await asyncio.to_thread(free_model_catalog)
+
+    @app.get("/api/runtime")
+    async def runtime() -> dict:
+        return await asyncio.to_thread(runtime_status)
+
     @app.get("/api/projects")
     async def projects() -> list:
         return await asyncio.to_thread(_cached_summaries)
+
+    @app.post("/api/projects", status_code=201)
+    async def create_project(payload: dict) -> dict:
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Payload phải là object")
+
+        project_id = payload.get("project_id")
+        title = payload.get("title")
+        pipeline_type = payload.get("pipeline_type")
+        if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Mã dự án chỉ dùng chữ thường, số và dấu gạch ngang",
+            )
+        if len(project_id) > MAX_PROJECT_ID_LENGTH:
+            raise HTTPException(status_code=400, detail="Mã dự án quá dài")
+        if not isinstance(title, str) or not title.strip():
+            raise HTTPException(status_code=400, detail="Tên dự án không được để trống")
+        title = title.strip()
+        if len(title) > MAX_PROJECT_TITLE_LENGTH:
+            raise HTTPException(status_code=400, detail="Tên dự án quá dài")
+        if not isinstance(pipeline_type, str) or pipeline_type == "framework-smoke":
+            raise HTTPException(status_code=400, detail="Luồng sản xuất không hợp lệ")
+
+        try:
+            await asyncio.to_thread(load_pipeline_readonly, pipeline_type)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=400, detail="Luồng sản xuất không tồn tại") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Manifest luồng sản xuất không hợp lệ") from exc
+
+        project_dir = PROJECTS_DIR / project_id
+        if project_dir.exists():
+            raise HTTPException(status_code=409, detail="Mã dự án đã tồn tại")
+
+        await asyncio.to_thread(
+            init_project,
+            project_id,
+            title=title,
+            pipeline_type=pipeline_type,
+            pipeline_dir=PROJECTS_DIR,
+        )
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return {
+            "ok": True,
+            "project_id": project_id,
+            "title": title,
+            "pipeline_type": pipeline_type,
+            "url": f"/p/{project_id}",
+        }
+
+    @app.get("/api/workflows")
+    async def workflows() -> list:
+        return await asyncio.to_thread(_workflow_catalog)
 
     @app.get("/api/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:
@@ -288,6 +427,10 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def library_page() -> HTMLResponse:
         return _ui_html("index.html", ("board.css", "library.js"))
+
+    @app.get("/settings")
+    async def settings_page() -> HTMLResponse:
+        return _ui_html("settings.html", ("settings.css", "settings.js"))
 
     if UI_DIR.is_dir():
         app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")

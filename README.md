@@ -784,3 +784,36 @@ make test
 If this project looks useful to you, a ⭐ would really mean a lot — it helps others discover it too.
 
 If you'd like to go further, [sponsor the project](https://github.com/sponsors/calesthio) — OpenMontage is built nights and weekends, and your support makes that sustainable.
+
+## Desktop App (Windows + macOS)
+
+OpenMontage có launcher desktop native cho Backlot. Bản cài giữ project và API
+key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
+
+### Build trên máy hiện tại
+
+```bash
+python -m pip install -r requirements.txt -r requirements-packaging.txt
+python scripts/build_desktop.py
+```
+
+- macOS: tạo `dist/OpenMontage.app`; có thể nén thành DMG bằng `hdiutil`.
+- Windows: tạo `dist/OpenMontage/OpenMontage.exe`; nén cả thư mục để phát hành.
+- GitHub Actions tự build cả hai nền tảng khi chạy thủ công hoặc push tag `v*`.
+
+Bản desktop chính thức bao gồm Backlot, tạo dự án, workflow menu, cài đặt
+provider/model, Node.js, npm/npx, FFmpeg, ffprobe và toàn bộ dependency
+Remotion. Người dùng không phải cài riêng Node.js hoặc FFmpeg.
+
+Build tự tải runtime đúng theo hệ điều hành/kiến trúc vào `packaging/runtime/`:
+
+- Node.js portable cho macOS/Windows.
+- FFmpeg portable từ `imageio-ffmpeg`.
+- ffprobe native theo kiến trúc macOS/Windows.
+- Remotion `node_modules` được cài bằng npm portable và đóng gói cùng app.
+
+Các provider adapter đã được đóng gói trong app. API key cloud vẫn nhập tại
+**Cài đặt API** và lưu local trên máy người dùng; model weights lớn như
+Stable Diffusion, Wan, LTX hoặc ComfyUI không nhúng vào file cài đặt để tránh
+file hàng trăm GB. App hiển thị model nào đã sẵn sàng và dùng được ngay khi
+người dùng cài model/server local tương ứng.

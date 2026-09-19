@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backlot — Cài đặt API</title>
+<link rel="stylesheet" href="/ui/settings.css">
+</head>
+<body>
+<main class="settings-wrap">
+  <header class="settings-head">
+    <div>
+      <a class="settings-brand" href="/">BACKLOT</a>
+      <h1>Cài đặt API</h1>
+      <p>Nhập khóa provider để bật các công cụ tạo ảnh, video, giọng nói và âm nhạc.</p>
+    </div>
+    <nav>
+      <a href="/">Thư viện dự án</a>
+      <a href="/p/demos">Dự án demo</a>
+    </nav>
+  </header>
+
+  <section class="security-note">
+    <strong>Riêng tư trên máy này</strong>
+    <span>Khóa được lưu vào file <code>.env</code> local với quyền chỉ chủ tài khoản đọc được. Backlot chỉ hiển thị trạng thái và 4 ký tự cuối.</span>
+  </section>
+
+  <section class="free-model-panel">
+    <div class="free-model-copy">
+      <span class="section-kicker">LOCAL MODEL LAB</span>
+      <h2>Model miễn phí / chạy trên máy</h2>
+      <p>Không tốn phí API. App chỉ kiểm tra môi trường hiện tại; không tự tải model nặng hoặc tự khởi động server.</p>
+    </div>
+    <div id="free-models" class="free-model-grid">
+      <div class="loading">Đang kiểm tra model local…</div>
+    </div>
+  </section>
+
+  <section class="runtime-panel">
+    <div class="runtime-copy">
+      <span class="section-kicker">DESKTOP RUNTIME</span>
+      <h2>Runtime production đã đóng gói</h2>
+      <p>Bản cài Windows/macOS tự mang theo Node.js, FFmpeg và bộ Remotion. API key và model weights vẫn do bạn chủ động cấu hình.</p>
+    </div>
+    <div id="runtime-status" class="runtime-grid">
+      <div class="loading">Đang kiểm tra runtime…</div>
+    </div>
+  </section>
+
+  <div id="status" class="status" role="status"></div>
+  <form id="provider-form">
+    <section class="cost-panel">
+      <div class="cost-copy">
+        <h2>Kiểm soát chi phí</h2>
+        <p>Thiết lập cách Backlot xếp hạng provider và mức chi tối đa mặc định cho mỗi tác vụ production.</p>
+      </div>
+      <div class="cost-controls">
+        <label>
+          <span>Chế độ chọn model</span>
+          <select id="cost-profile" name="cost_profile"></select>
+        </label>
+        <label>
+          <span>Ngân sách tối đa mặc định (USD)</span>
+          <input id="budget-usd" name="budget_usd" type="number" min="0" step="0.01" placeholder="Không giới hạn">
+        </label>
+      </div>
+      <p class="cost-note">Để trống ngân sách nếu muốn không giới hạn. Production đang chạy cần khởi động lại agent để nhận cấu hình mới.</p>
+    </section>
+    <div id="provider-groups" class="provider-groups">
+      <div class="loading">Đang tải cấu hình…</div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="save-button">LƯU CẤU HÌNH</button>
+      <span id="configured-count" class="configured-count"></span>
+    </div>
+  </form>
+</main>
+<script type="module" src="/ui/settings.js"></script>
+</body>
+</html>

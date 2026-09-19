@@ -1,0 +1,4 @@
+# Desktop application packaging
+pyinstaller>=6.10,<7
+pywebview>=5.3,<7
+imageio-ffmpeg>=0.6,<1

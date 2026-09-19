@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Backlot — Library</title>
+<title>Backlot — Thư viện dự án</title>
 <link rel="stylesheet" href="/ui/board.css">
 </head>
 <body>
@@ -12,14 +12,63 @@
     <div class="clapper"></div>
     <div>
       <span class="wordmark">Backlot</span>
-      <h1>Library</h1>
+      <h1>Thư viện dự án</h1>
     </div>
     <span class="chip" id="count"></span>
     <div class="spacer"></div>
-    <span class="live idle" id="liveBadge"><span class="dot"></span><span id="liveText">IDLE</span></span>
+    <a class="settings-link primary-link" href="#new-project">＋ TẠO DỰ ÁN</a>
+    <a class="settings-link" href="#workflows">☰ LUỒNG LÀM VIỆC</a>
+    <a class="settings-link" href="/settings">⚙ CÀI ĐẶT API</a>
+    <span class="live idle" id="liveBadge"><span class="dot"></span><span id="liveText">ĐANG CHỜ</span></span>
   </header>
+  <section class="new-project" id="new-project">
+    <div class="new-project-copy">
+      <span class="section-kicker">NEW PRODUCTION</span>
+      <h2>Tạo dự án mới</h2>
+      <p>Chọn một luồng sản xuất. Backlot sẽ tạo workspace chuẩn và mở bảng sản xuất ngay sau đó.</p>
+    </div>
+    <form id="new-project-form" class="new-project-form">
+      <label>
+        <span>Tên dự án</span>
+        <input id="project-title" name="title" type="text" maxlength="200" placeholder="Ví dụ: Video giới thiệu sản phẩm" required>
+      </label>
+      <label>
+        <span>Mã dự án</span>
+        <input id="project-id" name="project_id" type="text" maxlength="80" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="video-gioi-thieu-san-pham" required>
+      </label>
+      <label>
+        <span>Luồng sản xuất</span>
+        <select id="project-pipeline" name="pipeline_type" required>
+          <option value="">Đang tải danh mục…</option>
+        </select>
+      </label>
+      <button class="create-project-button" type="submit">KHỞI TẠO &amp; MỞ BOARD</button>
+      <p class="new-project-status" id="new-project-status" role="status"></p>
+    </form>
+  </section>
+  <section class="workflow-hub" id="workflows">
+    <div class="workflow-intro">
+      <div>
+        <span class="section-kicker">OPENMONTAGE CONTROL ROOM</span>
+        <h2>App có thể làm gì?</h2>
+        <p>Chọn đúng luồng sản xuất, để agent đi theo manifest, checkpoint và cổng duyệt thay vì chạy các lệnh rời rạc.</p>
+      </div>
+      <a class="workflow-settings" href="/settings">Cấu hình provider →</a>
+    </div>
+    <div class="capability-grid">
+      <article class="capability-card"><span class="cap-icon">✦</span><h3>Từ ý tưởng đến video</h3><p>Nghiên cứu, đề xuất, viết kịch bản, lập cảnh, tạo tài nguyên, dựng và kết xuất.</p></article>
+      <article class="capability-card"><span class="cap-icon">◌</span><h3>Phân tích video nguồn</h3><p>Đọc footage/reference, tách cảnh, transcript, frame và chọn hướng tái dựng phù hợp.</p></article>
+      <article class="capability-card"><span class="cap-icon">▣</span><h3>Ảnh, video, voice, nhạc</h3><p>Tự xếp hạng provider theo chất lượng, độ ổn định, chi phí và cấu hình bạn đã chọn.</p></article>
+      <article class="capability-card"><span class="cap-icon">✓</span><h3>Duyệt và kiểm soát chi phí</h3><p>Theo dõi checkpoint, review, ngân sách, lựa chọn provider và lịch sử render trên bảng sản xuất.</p></article>
+    </div>
+    <div class="workflow-menu-head">
+      <div><span class="section-kicker">WORKFLOW MENU</span><h2>Chọn luồng sản xuất</h2></div>
+      <div class="workflow-filters" id="workflowFilters"></div>
+    </div>
+    <div class="workflow-list" id="workflowList"><div class="workflow-loading">Đang đọc danh mục pipeline…</div></div>
+  </section>
   <div class="lib-grid" id="grid"></div>
-  <p class="hint" id="empty" style="display:none">No projects yet — run a production and it will appear here.</p>
+  <p class="hint" id="empty" style="display:none">Chưa có dự án — hãy chạy một quy trình sản xuất để dự án xuất hiện ở đây.</p>
 </div>
 <script type="module" src="/ui/library.js"></script>
 </body>

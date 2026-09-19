@@ -383,6 +383,8 @@ class VideoSelector(BaseTool):
         if allowed:
             candidates = [tool for tool in candidates if tool.provider in allowed]
         candidates = self._filter_candidates(inputs, candidates)
+        from lib.scoring import filter_tools_by_budget
+        candidates = filter_tools_by_budget(candidates, inputs, task_context)
 
         env_hint = os.environ.get("VIDEO_GEN_LOCAL_MODEL", "").lower()
         env_map = {

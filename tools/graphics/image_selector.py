@@ -345,6 +345,8 @@ class ImageSelector(BaseTool):
         if allowed:
             candidates = [tool for tool in candidates if tool.provider in allowed]
         candidates = self._filter_candidates(inputs, candidates)
+        from lib.scoring import filter_tools_by_budget
+        candidates = filter_tools_by_budget(candidates, inputs, task_context)
 
         rankings = rank_providers(candidates, task_context)
 

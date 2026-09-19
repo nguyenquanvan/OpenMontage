@@ -10,6 +10,7 @@ Implements the budget governance rules from the spec:
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -42,14 +43,18 @@ class CostTracker:
 
     def __init__(
         self,
-        budget_total_usd: float = 10.0,
+        budget_total_usd: float | None = None,
         reserve_pct: float = 0.10,
         single_action_approval_usd: float = 0.50,
         require_approval_for_new_paid_tool: bool = True,
         mode: BudgetMode = BudgetMode.WARN,
         cost_log_path: Optional[Path] = None,
     ) -> None:
-        self.budget_total_usd = budget_total_usd
+        self.budget_total_usd = (
+            self._configured_budget_total()
+            if budget_total_usd is None
+            else budget_total_usd
+        )
         self.reserve_pct = reserve_pct
         self.single_action_approval_usd = single_action_approval_usd
         self.require_approval_for_new_paid_tool = require_approval_for_new_paid_tool
@@ -60,6 +65,18 @@ class CostTracker:
 
         if cost_log_path and cost_log_path.exists():
             self._load()
+
+    @staticmethod
+    def _configured_budget_total() -> float:
+        raw_budget = os.environ.get("OPENMONTAGE_BUDGET_USD")
+        if raw_budget:
+            try:
+                parsed = float(raw_budget)
+                if parsed >= 0:
+                    return parsed
+            except (TypeError, ValueError):
+                pass
+        return 10.0
 
     # ---- Budget calculations ----
 

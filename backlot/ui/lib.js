@@ -1,5 +1,78 @@
 // Shared helpers for the Backlot UI.
 
+const VI = {
+  "awaiting_human": "chờ bạn duyệt",
+  "in_progress": "đang chạy",
+  "completed": "đã xong",
+  "pending": "chưa chạy",
+  "failed": "thất bại",
+  "research": "nghiên cứu",
+  "proposal": "đề xuất",
+  "idea": "ý tưởng",
+  "script": "kịch bản",
+  "scene_plan": "kế hoạch cảnh",
+  "character_design": "thiết kế nhân vật",
+  "rig_plan": "bộ khung nhân vật",
+  "pose_library": "thư viện dáng",
+  "assets": "tài nguyên",
+  "edit": "dựng phim",
+  "compose": "kết xuất",
+  "publish": "xuất bản",
+  "research_brief": "bản nghiên cứu",
+  "proposal_packet": "gói đề xuất",
+  "asset_manifest": "danh mục tài nguyên",
+  "edit_decisions": "quyết định dựng",
+  "render_report": "báo cáo kết xuất",
+  "final_review": "kiểm tra cuối",
+  "publish_log": "nhật ký xuất bản",
+  "action_timeline": "timeline hành động",
+  "character_design": "thiết kế nhân vật",
+  "decision": "quyết định",
+  "unknown": "chưa xác định",
+  "animated-explainer": "video giải thích",
+  "animation": "hoạt hình",
+  "character-animation": "hoạt hình nhân vật",
+  "cinematic": "điện ảnh",
+  "documentary-montage": "phóng sự cắt dựng",
+  "screen-demo": "demo màn hình",
+  "talking-head": "người dẫn hình",
+  "avatar-spokesperson": "avatar thuyết trình",
+  "clip-factory": "xưởng video ngắn",
+  "podcast-repurpose": "tái sử dụng podcast",
+  "hybrid": "kết hợp",
+  "localization-dub": "lồng tiếng bản địa hoá",
+  "framework-smoke": "kiểm thử framework",
+  "clean-professional": "chuyên nghiệp, sạch",
+  "flat-motion-graphics": "motion graphics phẳng",
+  "minimalist-diagram": "sơ đồ tối giản",
+  "premium-minimalist": "tối giản cao cấp",
+  "templated": "theo mẫu",
+  "atelier": "thủ công riêng",
+  "remotion": "Remotion",
+  "hyperframes": "HyperFrames",
+  "ffmpeg": "FFmpeg",
+};
+
+export function tr(value, fallback = value) {
+  return VI[String(value)] || fallback;
+}
+
+export function trStage(value) {
+  return tr(value, String(value || "").replaceAll("_", " "));
+}
+
+export function trStatus(value) {
+  return tr(value, String(value || "").replaceAll("_", " "));
+}
+
+export function trPipeline(value) {
+  return tr(value, String(value || "").replaceAll("-", " "));
+}
+
+export function trArtifact(value) {
+  return tr(value, String(value || "").replaceAll("_", " "));
+}
+
 export async function getJSON(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${url}`);
@@ -38,10 +111,10 @@ export function fmtMoney(v) {
 export function fmtAgo(epochSeconds) {
   if (!epochSeconds) return "";
   const diff = Date.now() / 1000 - epochSeconds;
-  if (diff < 90) return "just now";
-  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
+  if (diff < 90) return "vừa xong";
+  if (diff < 3600) return `${Math.round(diff / 60)} phút trước`;
+  if (diff < 86400) return `${Math.round(diff / 3600)} giờ trước`;
+  return `${Math.round(diff / 86400)} ngày trước`;
 }
 
 export function fmtClock(iso) {

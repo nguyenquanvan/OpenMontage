@@ -268,6 +268,8 @@ class TTSSelector(BaseTool):
         allowed = set(inputs.get("allowed_providers") or [])
         if allowed:
             candidates = [tool for tool in candidates if tool.provider in allowed]
+        from lib.scoring import filter_tools_by_budget
+        candidates = filter_tools_by_budget(candidates, inputs, task_context)
 
         rankings = rank_providers(candidates, task_context)
 

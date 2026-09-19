@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import os
 from pathlib import Path
 from typing import Any
 
@@ -111,7 +112,9 @@ class LocalDiffusion(BaseTool):
         width = inputs.get("width", 512)
         height = inputs.get("height", 512)
         seed = inputs.get("seed")
-        model_id = inputs.get("model", "stabilityai/stable-diffusion-2-1-base")
+        model_id = inputs.get("model") or os.environ.get(
+            "LOCAL_IMAGE_MODEL", "stabilityai/stable-diffusion-2-1-base"
+        )
         steps = inputs.get("num_inference_steps", 30)
         guidance = inputs.get("guidance_scale", 7.5)
 

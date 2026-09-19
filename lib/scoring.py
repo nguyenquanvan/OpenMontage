@@ -10,6 +10,7 @@ Scores are normalized 0-1. Higher is better.
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict, field
+import os
 import re
 from typing import Any
 
@@ -17,6 +18,37 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Provider Score
 # ---------------------------------------------------------------------------
+
+SCORE_PROFILES: dict[str, dict[str, float]] = {
+    "economy": {
+        "task_fit": 0.20,
+        "output_quality": 0.10,
+        "control": 0.10,
+        "reliability": 0.15,
+        "cost_efficiency": 0.30,
+        "latency": 0.10,
+        "continuity": 0.05,
+    },
+    "balanced": {
+        "task_fit": 0.30,
+        "output_quality": 0.20,
+        "control": 0.15,
+        "reliability": 0.15,
+        "cost_efficiency": 0.10,
+        "latency": 0.05,
+        "continuity": 0.05,
+    },
+    "quality": {
+        "task_fit": 0.30,
+        "output_quality": 0.30,
+        "control": 0.17,
+        "reliability": 0.12,
+        "cost_efficiency": 0.04,
+        "latency": 0.02,
+        "continuity": 0.05,
+    },
+}
+DEFAULT_SCORE_PROFILE = "balanced"
 
 @dataclass
 class ProviderScore:
@@ -31,18 +63,18 @@ class ProviderScore:
     cost_efficiency: float = 0.0  # 0-1: quality per dollar
     latency: float = 0.0        # 0-1: acceptable turnaround
     continuity: float = 0.0     # 0-1: fits already locked decisions
+    cost_profile: str = DEFAULT_SCORE_PROFILE
+
+    def weighted_score_for(self, profile: str | None = None) -> float:
+        weights = SCORE_PROFILES.get(profile or self.cost_profile, SCORE_PROFILES[DEFAULT_SCORE_PROFILE])
+        return sum(
+            getattr(self, dimension) * weight
+            for dimension, weight in weights.items()
+        )
 
     @property
     def weighted_score(self) -> float:
-        return (
-            self.task_fit * 0.30
-            + self.output_quality * 0.20
-            + self.control * 0.15
-            + self.reliability * 0.15
-            + self.cost_efficiency * 0.10
-            + self.latency * 0.05
-            + self.continuity * 0.05
-        )
+        return self.weighted_score_for()
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -54,13 +86,10 @@ class ProviderScore:
         parts = [f"{self.tool_name} ({self.provider}): {self.weighted_score:.2f}"]
         top = sorted(
             [
-                ("task_fit", self.task_fit, 0.30),
-                ("output_quality", self.output_quality, 0.20),
-                ("control", self.control, 0.15),
-                ("reliability", self.reliability, 0.15),
-                ("cost_efficiency", self.cost_efficiency, 0.10),
-                ("latency", self.latency, 0.05),
-                ("continuity", self.continuity, 0.05),
+                (name, getattr(self, name), weight)
+                for name, weight in SCORE_PROFILES.get(
+                    self.cost_profile, SCORE_PROFILES[DEFAULT_SCORE_PROFILE]
+                ).items()
             ],
             key=lambda x: x[1] * x[2],
             reverse=True,
@@ -304,6 +333,24 @@ def normalize_task_context(
     """Normalize loose task context into the scorer's expected shape."""
     context = dict(task_context or {})
 
+    configured_profile = os.environ.get("OPENMONTAGE_COST_PROFILE", DEFAULT_SCORE_PROFILE)
+    if configured_profile not in SCORE_PROFILES:
+        configured_profile = DEFAULT_SCORE_PROFILE
+    if "cost_profile" not in context:
+        context["cost_profile"] = configured_profile
+    elif context["cost_profile"] not in SCORE_PROFILES:
+        context["cost_profile"] = configured_profile
+
+    if "budget_usd" not in context:
+        raw_budget = os.environ.get("OPENMONTAGE_BUDGET_USD")
+        if raw_budget:
+            try:
+                parsed_budget = float(raw_budget)
+                if parsed_budget >= 0:
+                    context["budget_usd"] = parsed_budget
+            except (TypeError, ValueError):
+                pass
+
     needs = context.get("needs") or []
     if isinstance(needs, str):
         needs = [needs]
@@ -527,7 +574,30 @@ def score_provider(tool, task_context: dict[str, Any]) -> ProviderScore:
         cost_efficiency=cost_efficiency,
         latency=latency,
         continuity=continuity,
+        cost_profile=task_context.get("cost_profile", DEFAULT_SCORE_PROFILE),
     )
+
+
+def filter_tools_by_budget(tools: list, inputs: dict[str, Any], task_context: dict[str, Any]) -> list:
+    """Keep only providers whose estimated operation fits the remaining budget."""
+    remaining = task_context.get("budget_remaining_usd")
+    if remaining is None:
+        return tools
+    try:
+        remaining = float(remaining)
+    except (TypeError, ValueError):
+        return tools
+
+    affordable = []
+    for tool in tools:
+        try:
+            estimated = float(tool.estimate_cost(inputs))
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            affordable.append(tool)
+            continue
+        if estimated <= remaining + 1e-9:
+            affordable.append(tool)
+    return affordable
 
 
 def rank_providers(

@@ -13,6 +13,20 @@ from tools.cost_tracker import CostTracker
 
 
 class CostTrackerGovernanceTests(unittest.TestCase):
+    def test_default_budget_reads_openmontage_setting(self) -> None:
+        import os
+
+        previous = os.environ.get("OPENMONTAGE_BUDGET_USD")
+        try:
+            os.environ["OPENMONTAGE_BUDGET_USD"] = "2.5"
+            tracker = CostTracker(mode=BudgetMode.OBSERVE)
+            self.assertEqual(tracker.budget_total_usd, 2.5)
+        finally:
+            if previous is None:
+                os.environ.pop("OPENMONTAGE_BUDGET_USD", None)
+            else:
+                os.environ["OPENMONTAGE_BUDGET_USD"] = previous
+
     def test_warn_mode_marks_over_budget_reservation(self) -> None:
         with self.subTest("warning is recorded and persisted"):
             import tempfile

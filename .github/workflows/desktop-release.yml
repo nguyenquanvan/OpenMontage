@@ -74,6 +74,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $version = python -c "from lib.app_version import APP_VERSION; print(APP_VERSION)"
+          $build = python -c "from lib.app_version import APP_BUILD; print(APP_BUILD)"
           $installer = Get-ChildItem "dist/MOSA-TOOL-ALL-Setup-*-win-x64.exe" | Select-Object -First 1
           $install = Start-Process -FilePath $installer.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER" -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)" }

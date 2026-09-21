@@ -46,7 +46,6 @@ VersionInfoCompany=MOSA TOOL ALL
 VersionInfoDescription=MOSA TOOL ALL Windows Installer
 
 [Languages]
-Name: "vietnamese"; MessagesFile: "compiler:Languages\Vietnamese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]

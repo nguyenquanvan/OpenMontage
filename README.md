@@ -7,7 +7,7 @@
 
 <p align="center"><sub><em>Monty the Clapper — the official mascot of OpenMontage</em></sub></p>
 
-<h1 align="center">OpenMontage</h1>
+<h1 align="center">MOSA TOOL ALL</h1>
 
 <p align="center"><strong>The first open-source, agentic video production system.</strong></p>
 
@@ -785,10 +785,36 @@ If this project looks useful to you, a ⭐ would really mean a lot — it helps 
 
 If you'd like to go further, [sponsor the project](https://github.com/sponsors/calesthio) — OpenMontage is built nights and weekends, and your support makes that sustainable.
 
-## Desktop App (Windows + macOS)
+## MOSA TOOL ALL Desktop App (Windows + macOS)
 
-OpenMontage có launcher desktop native cho Backlot. Bản cài giữ project và API
+MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
+
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.2.0` · build `20260921.1`**. App hiển thị
+phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
+`GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
+trong `lib/app_version.py`.
+
+### Model Center cho máy nhân viên
+
+Trong **Cài đặt API → Model miễn phí / chạy trên máy**, mỗi model có nút
+**TẢI MODEL**, **GỠ MODEL**, dung lượng ước tính, RAM tối thiểu, giấy phép và tiến trình tải.
+Mỗi model có Python runtime cô lập do `uv` quản lý, nên nhân viên không cần tự cài
+Python/PyTorch vào hệ thống. Các gói được chia thành **Thiết yếu**, **Nâng cao** và
+**Nghiên cứu**; model có license phi thương mại luôn yêu cầu xác nhận trước khi tải.
+
+Model Center hỗ trợ VieNeu-TTS, Kokoro, Piper, faster-whisper/MLX Whisper,
+Real-ESRGAN, rembg, RIFE, Florence-2, PaddleOCR, Depth Anything V2 Small,
+SAM 2.1 Tiny, MuseTalk, Stable Diffusion/WAN/ComfyUI/ACE-Step và các model
+nghiên cứu MusicGen, Qwen VL, CodeFormer, Wav2Lip.
+Model được lưu trong thư mục dữ liệu riêng của người dùng, không nằm trong app
+bundle. App kiểm tra dung lượng trước khi tải và luôn giữ ít nhất 12 GB dự phòng.
+File tải dở dùng đuôi `.part` và sẽ được tiếp tục ở lần tải sau.
+
+Các model quá lớn hoặc không phù hợp cấu hình máy sẽ bị khóa nút và hiển thị lý
+do. FLUX Dev/LTX có điều khoản giấy phép riêng; người dùng phải xác nhận trước
+khi tải. API quản trị nội bộ: `GET /api/model-installs` và
+`POST /api/model-installs/{model_id}` và `DELETE /api/model-installs/{model_id}`.
 
 ### Build trên máy hiện tại
 
@@ -797,8 +823,10 @@ python -m pip install -r requirements.txt -r requirements-packaging.txt
 python scripts/build_desktop.py
 ```
 
-- macOS: tạo `dist/OpenMontage.app`; có thể nén thành DMG bằng `hdiutil`.
-- Windows: tạo `dist/OpenMontage/OpenMontage.exe`; nén cả thư mục để phát hành.
+- macOS: tạo `dist/MOSA TOOL ALL.app`; có thể nén thành DMG bằng `hdiutil`.
+- Windows: tạo app portable trong `dist/MOSA TOOL ALL/` và bộ cài theo người dùng
+  `dist/MOSA-TOOL-ALL-Setup-<version>-<build>-win-x64.exe`. Bộ cài không cần quyền
+  quản trị, tạo shortcut Start Menu, hỗ trợ shortcut Desktop và gỡ cài đặt chuẩn.
 - GitHub Actions tự build cả hai nền tảng khi chạy thủ công hoặc push tag `v*`.
 
 Bản desktop chính thức bao gồm Backlot, tạo dự án, workflow menu, cài đặt

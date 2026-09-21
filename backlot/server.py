@@ -29,6 +29,9 @@ from backlot.settings import (
     validate_cost_settings,
 )
 from backlot.free_models import free_model_catalog
+from backlot.runner import available_agents, get_run, start_run
+from backlot.model_installer import install_catalog, start_install, start_runtime_repair, uninstall_model
+from lib.app_version import version_payload
 from lib.runtime import runtime_status
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
@@ -222,6 +225,10 @@ def create_app() -> FastAPI:
     async def health() -> dict:
         return {"ok": True, "app": "backlot"}
 
+    @app.get("/api/version")
+    async def version() -> dict[str, str]:
+        return version_payload()
+
     @app.get("/api/settings/providers")
     async def provider_settings() -> dict:
         return settings_status()
@@ -250,6 +257,35 @@ def create_app() -> FastAPI:
     @app.get("/api/free-models")
     async def free_models() -> list[dict]:
         return await asyncio.to_thread(free_model_catalog)
+
+    @app.get("/api/model-installs")
+    async def model_installs() -> list[dict]:
+        return await asyncio.to_thread(install_catalog)
+
+    @app.post("/api/model-installs/{model_id}", status_code=202)
+    async def install_model(model_id: str, payload: dict | None = None) -> dict:
+        try:
+            return await asyncio.to_thread(
+                start_install,
+                model_id,
+                accept_license=bool((payload or {}).get("accept_license", False)),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.delete("/api/model-installs/{model_id}")
+    async def remove_model(model_id: str) -> dict:
+        try:
+            return await asyncio.to_thread(uninstall_model, model_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/model-installs/{model_id}/runtime", status_code=202)
+    async def repair_model_runtime(model_id: str) -> dict:
+        try:
+            return await asyncio.to_thread(start_runtime_repair, model_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/runtime")
     async def runtime() -> dict:
@@ -313,6 +349,34 @@ def create_app() -> FastAPI:
     @app.get("/api/workflows")
     async def workflows() -> list:
         return await asyncio.to_thread(_workflow_catalog)
+
+    @app.get("/api/project/{project_id}/run")
+    async def project_run_status(project_id: str) -> dict:
+        _safe_project_dir(project_id)
+        return await asyncio.to_thread(get_run, project_id)
+
+    @app.post("/api/project/{project_id}/run", status_code=202)
+    async def project_run(project_id: str, payload: dict) -> dict:
+        _safe_project_dir(project_id)
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Payload phải là object")
+        try:
+            return await asyncio.to_thread(
+                start_run,
+                project_id,
+                brief=payload.get("brief", ""),
+                agent=payload.get("agent"),
+                model=payload.get("model"),
+                allow_automation=payload.get("allow_automation", False),
+            )
+        except ValueError as exc:
+            detail = str(exc)
+            status = 409 if "đang chạy" in detail else 400
+            raise HTTPException(status_code=status, detail=detail) from exc
+
+    @app.get("/api/agents")
+    async def agents() -> list[dict]:
+        return await asyncio.to_thread(available_agents)
 
     @app.get("/api/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:

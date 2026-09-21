@@ -20,6 +20,8 @@ let selectedStage = null;   // stage drawer open for this stage name
 let activeRender = 0;
 let replay = null;          // {t0, t1, t, playing} — replay mode when non-null
 let firstPaint = true;
+let run = { status: "idle" };
+let appVersion = null;
 
 function applyTheme(theme) {
   currentTheme = theme === "light" ? "light" : "dark";
@@ -56,6 +58,7 @@ function renderSlate(s) {
       ? el("span", { class: "chip" }, `${board.scenes.length} cảnh · ${fmtDuration(board.total_duration_seconds)}`)
       : null,
     s.style_playbook ? el("span", { class: "chip" }, s.style_playbook) : null,
+    appVersion ? el("span", { class: "chip app-version", title: `Phiên bản ${appVersion.version} · build ${appVersion.build}` }, appVersion.label) : null,
   ];
 
   const awaiting = s.stages.find((x) => x.status === "awaiting_human");
@@ -98,6 +101,12 @@ function renderSlate(s) {
     ),
     ...chips,
     el("div", { class: "spacer" }),
+    el("button", {
+      class: "settings-link primary-link run-button",
+      type: "button",
+      disabled: run.status === "starting" || run.status === "running" ? true : null,
+      onclick: openRunModal,
+    }, run.status === "starting" || run.status === "running" ? "▶ ĐANG CHẠY" : "▶ BẮT ĐẦU WORKFLOW"),
     el("a", { class: "settings-link primary-link", href: "/#new-project" }, "＋ TẠO DỰ ÁN"),
     el("a", { class: "settings-link", href: "/settings" }, "⚙ CÀI ĐẶT API"),
     renderThemeToggle(),
@@ -569,6 +578,86 @@ function closeModal() { modal.classList.remove("open"); }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
 
+function openRunModal() {
+  const currentBrief = state && state.brief ? state.brief : "";
+  modal.innerHTML = "";
+  const status = el("p", { class: "run-status", role: "status" });
+  const submit = el("button", { class: "create-project-button", type: "submit" }, "BẮT ĐẦU AGENT");
+  const form = el("form", {
+    class: "run-form",
+    onsubmit: async (event) => {
+      event.preventDefault();
+      const brief = form.querySelector("textarea").value.trim();
+      const agent = form.querySelector("select").value;
+      const model = form.querySelector("input[name=model]").value.trim();
+      const allowAutomation = form.querySelector("input[type=checkbox]").checked;
+      if (!brief) {
+        status.textContent = "Hãy mô tả video cần sản xuất.";
+        status.className = "run-status error";
+        return;
+      }
+      if (!allowAutomation) {
+        status.textContent = "Bạn cần xác nhận cho phép agent chạy lệnh tự động.";
+        status.className = "run-status error";
+        return;
+      }
+      submit.disabled = true;
+      status.textContent = "Đang khởi chạy agent…";
+      status.className = "run-status";
+      try {
+        const response = await fetch(`/api/project/${encodedProjectId}/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brief, agent, model, allow_automation: allowAutomation }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Không khởi chạy được workflow");
+        run = result;
+        closeModal();
+        await refresh();
+      } catch (error) {
+        status.textContent = String(error.message || "Không khởi chạy được workflow");
+        status.className = "run-status error";
+        submit.disabled = false;
+      }
+    },
+  },
+    el("div", { class: "run-form-kicker" }, "LOCAL AGENT RUNNER"),
+    el("h2", {}, "Bắt đầu workflow"),
+    el("p", {}, "Agent sẽ đọc pipeline, chạy các tool đã cấu hình và ghi checkpoint vào board này."),
+    el("label", {},
+      el("span", {}, "Brief sản xuất"),
+      el("textarea", { name: "brief", rows: "6", placeholder: "Ví dụ: Tạo video 60 giây giới thiệu sản phẩm cho người mới…" }, currentBrief),
+    ),
+    el("div", { class: "run-form-grid" },
+      el("label", {},
+        el("span", {}, "Agent"),
+        el("select", { name: "agent" },
+          el("option", { value: "auto" }, "Tự chọn (Codex → Claude)"),
+          el("option", { value: "codex" }, "Codex"),
+          el("option", { value: "claude" }, "Claude Code"),
+        ),
+      ),
+      el("label", {},
+        el("span", {}, "Model (tuỳ chọn)"),
+        el("input", { name: "model", type: "text", placeholder: "Để agent tự chọn" }),
+      ),
+    ),
+    el("label", { class: "run-confirm" },
+      el("input", { type: "checkbox" }),
+      el("span", {}, "Tôi cho phép agent chạy lệnh trong workspace dự án để tạo nội dung và render video."),
+    ),
+    status,
+    submit,
+  );
+  modal.append(
+    el("span", { class: "modal-close", onclick: closeModal }, "ESC · ĐÓNG"),
+    el("div", { class: "modal-page" }, form),
+  );
+  modal.classList.add("open");
+  form.querySelector("textarea").focus();
+}
+
 // ---------------------------------------------------------------------------
 // right rail: decisions, activity
 // ---------------------------------------------------------------------------
@@ -875,9 +964,9 @@ function renderNoState(s) {
   return el("div", { class: "notice", style: "border-color:#2b2b33;background:var(--surface-2);color:var(--text-3)" },
     el("span", { style: "font-size:calc(15px * var(--fs-scale))" }, "◌"),
     el("span", {},
-      el("b", { style: "color:var(--text-2)" }, "Chưa có trạng thái pipeline. "),
-      "Dự án này chưa có checkpoint — Backlot đang hiển thị những gì tìm thấy trên ổ đĩa. ",
-      "Các run tuân theo giao thức checkpoint sẽ có đầy đủ bảng điều khiển."));
+      el("b", { style: "color:var(--text-2)" }, "Đã tạo workspace thành công. "),
+      "Chưa có workflow nào được chạy, nên bảng chưa có checkpoint để hiển thị. ",
+      "Khi agent bắt đầu production và ghi trạng thái, các bước, tài nguyên và tiến độ sẽ xuất hiện ở đây."));
 }
 
 function renderAwaitingNotice(s) {
@@ -1057,7 +1146,7 @@ function tickReplay() {
 function render() {
   if (!state) return;
   const s = replay ? stateAt(state, replay.t) : state;
-  document.title = `Backlot — ${s.title}`;
+  document.title = `MOSA TOOL ALL — Backlot — ${s.title}`;
   document.body.classList.toggle("first", firstPaint);
   firstPaint = false;
   app.innerHTML = "";
@@ -1129,7 +1218,14 @@ function normalize(s) {
 }
 
 async function refresh() {
-  state = normalize(await getJSON(`/api/project/${encodeURIComponent(projectId)}/state`));
+  const [nextState, nextRun, nextVersion] = await Promise.all([
+    getJSON(`/api/project/${encodeURIComponent(projectId)}/state`),
+    getJSON(`/api/project/${encodeURIComponent(projectId)}/run`),
+    getJSON("/api/version").catch(() => null),
+  ]);
+  state = normalize(nextState);
+  run = nextRun;
+  appVersion = nextVersion;
   render();
 }
 
@@ -1142,4 +1238,5 @@ refresh().catch((err) => {
 // ?static=1 disables the live feed (screenshots, static exports).
 if (!new URLSearchParams(location.search).has("static")) {
   subscribe(`/api/project/${encodeURIComponent(projectId)}/events`, () => refresh().catch(console.error));
+  window.setInterval(() => refresh().catch(console.error), 3000);
 }

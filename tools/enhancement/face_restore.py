@@ -103,7 +103,8 @@ class FaceRestore(BaseTool):
             import gfpgan  # noqa: F401
             return ToolStatus.AVAILABLE
         except ImportError:
-            return ToolStatus.UNAVAILABLE
+            from lib.model_runtime import managed_model_available
+            return ToolStatus.AVAILABLE if managed_model_available("face-restore") else ToolStatus.UNAVAILABLE
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])
@@ -128,9 +129,17 @@ class FaceRestore(BaseTool):
             import torch
             from tools.video._shared import get_torch_device as _get_device
         except ImportError as e:
-            return ToolResult(
-                success=False,
-                error=f"Missing dependency: {e}. Run: uv pip install gfpgan",
+            from lib.model_runtime import run_model_worker
+            return run_model_worker(
+                "face-restore",
+                "face_restore",
+                {
+                    "input_path": str(input_path),
+                    "output_path": str(output_path),
+                    "model": model_name,
+                    "fidelity": fidelity,
+                    "upscale": upscale,
+                },
             )
 
         _device = _get_device()

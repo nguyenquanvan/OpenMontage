@@ -92,6 +92,15 @@ class TestBacklotServerApi:
         assert response.status_code == 200
         assert response.json() == {"ok": True, "app": "backlot"}
 
+    def test_version_is_exposed(self, client):
+        response = client.get("/api/version")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["app"] == "MOSA TOOL ALL"
+        assert payload["version"]
+        assert payload["build"]
+        assert payload["label"].startswith("v")
+
     def test_provider_settings_are_masked_and_persisted_locally(self, client, tmp_path, monkeypatch):
         env_path = tmp_path / ".env"
         monkeypatch.setattr(settings_mod, "ENV_PATH", env_path)
@@ -161,6 +170,30 @@ class TestBacklotServerApi:
             "local_diffusion", "wan_video", "piper_tts", "transcriber",
         }
         assert all("available" in item and "requirements" in item for item in catalog)
+        assert all("installer" in item for item in catalog)
+
+    def test_model_center_exposes_install_plans(self, client):
+        response = client.get("/api/model-installs")
+        assert response.status_code == 200
+        installs = {item["id"]: item for item in response.json()}
+        assert installs["piper-tts"]["size_label"]
+        assert installs["whisper-local"]["install_supported"] is True
+        assert installs["local-video-ltx"]["install_supported"] is False
+        assert installs["vieneu-tts"]["tier"] == "essential"
+        assert installs["musicgen-research"]["commercial_restricted"] is True
+        assert "runtime_installed" in installs["florence-vision"]
+
+    def test_model_center_rejects_unknown_or_unsupported_models(self, client):
+        unknown = client.post("/api/model-installs/not-real", json={})
+        assert unknown.status_code == 409
+        unsupported = client.post("/api/model-installs/local-video-ltx", json={})
+        assert unsupported.status_code == 409
+
+    def test_model_center_uninstall_endpoint(self, client, monkeypatch):
+        monkeypatch.setattr("backlot.server.uninstall_model", lambda model_id: {"id": model_id, "installed": False})
+        response = client.delete("/api/model-installs/piper-tts")
+        assert response.status_code == 200
+        assert response.json() == {"id": "piper-tts", "installed": False}
 
     def test_runtime_status_exposes_production_dependencies(self, client):
         response = client.get("/api/runtime")

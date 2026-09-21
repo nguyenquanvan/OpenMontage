@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Backlot — Cài đặt API</title>
+<title>MOSA TOOL ALL — Cài đặt API</title>
 <link rel="stylesheet" href="/ui/settings.css">
 </head>
 <body>
@@ -25,11 +25,29 @@
     <span>Khóa được lưu vào file <code>.env</code> local với quyền chỉ chủ tài khoản đọc được. Backlot chỉ hiển thị trạng thái và 4 ký tự cuối.</span>
   </section>
 
+  <section class="version-panel" aria-label="Phiên bản ứng dụng">
+    <div>
+      <span class="section-kicker">APP RELEASE</span>
+      <h2>Phiên bản MOSA TOOL ALL</h2>
+      <p>Dùng số phiên bản và mã build này để kiểm tra bạn đang chạy đúng bản mới nhất.</p>
+    </div>
+    <div class="version-value">
+      <strong id="app-version">Đang đọc phiên bản…</strong>
+      <code id="app-build">—</code>
+    </div>
+  </section>
+
   <section class="free-model-panel">
     <div class="free-model-copy">
       <span class="section-kicker">LOCAL MODEL LAB</span>
-      <h2>Model miễn phí / chạy trên máy</h2>
-      <p>Không tốn phí API. App chỉ kiểm tra môi trường hiện tại; không tự tải model nặng hoặc tự khởi động server.</p>
+      <h2>Model Center — tải và chạy trên máy</h2>
+      <p>Mỗi model được cài theo yêu cầu cùng Python runtime riêng, không làm phình bản cài chính. Model nghiên cứu luôn yêu cầu xác nhận giấy phép.</p>
+    </div>
+    <div class="model-tier-filter" role="group" aria-label="Lọc gói model">
+      <button type="button" data-model-tier="all" class="active">TẤT CẢ</button>
+      <button type="button" data-model-tier="essential">THIẾT YẾU</button>
+      <button type="button" data-model-tier="advanced">NÂNG CAO</button>
+      <button type="button" data-model-tier="research">NGHIÊN CỨU</button>
     </div>
     <div id="free-models" class="free-model-grid">
       <div class="loading">Đang kiểm tra model local…</div>
@@ -40,7 +58,7 @@
     <div class="runtime-copy">
       <span class="section-kicker">DESKTOP RUNTIME</span>
       <h2>Runtime production đã đóng gói</h2>
-      <p>Bản cài Windows/macOS tự mang theo Node.js, FFmpeg và bộ Remotion. API key và model weights vẫn do bạn chủ động cấu hình.</p>
+      <p>Bản cài Windows/macOS tự mang theo Node.js, FFmpeg, uv và bộ Remotion. Model Center dùng uv để tạo runtime riêng cho từng model.</p>
     </div>
     <div id="runtime-status" class="runtime-grid">
       <div class="loading">Đang kiểm tra runtime…</div>

@@ -99,7 +99,8 @@ class PiperTTS(BaseTool):
     def get_status(self) -> ToolStatus:
         if shutil.which("piper"):
             return ToolStatus.AVAILABLE
-        return ToolStatus.UNAVAILABLE
+        from lib.model_runtime import managed_model_available
+        return ToolStatus.AVAILABLE if managed_model_available("piper-tts") else ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0
@@ -120,6 +121,14 @@ class PiperTTS(BaseTool):
     def _generate(self, inputs: dict[str, Any]) -> ToolResult:
         output_path = Path(inputs.get("output_path", "tts_output.wav"))
         output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not shutil.which("piper"):
+            from lib.model_runtime import run_model_worker
+            return run_model_worker(
+                "piper-tts",
+                "piper_tts",
+                {"text": inputs["text"], "output_path": str(output_path)},
+            )
 
         proc = subprocess.run(
             [

@@ -4,16 +4,29 @@ const status = document.getElementById("status");
 const configuredCount = document.getElementById("configured-count");
 const freeModels = document.getElementById("free-models");
 const runtimeStatus = document.getElementById("runtime-status");
+const appVersion = document.getElementById("app-version");
+const appBuild = document.getElementById("app-build");
 
 let providers = [];
 let localSettings = [];
 let freeModelCatalog = [];
 let runtime = null;
+let modelPollTimer = null;
+let selectedModelTier = "all";
 let settings = {
   cost_profile: "balanced",
   budget_usd: null,
   cost_profiles: [],
 };
+
+async function loadAppVersion() {
+  const version = await fetch("/api/version").then((response) => {
+    if (!response.ok) throw new Error("Không đọc được phiên bản app");
+    return response.json();
+  });
+  appVersion.textContent = version.label;
+  appBuild.textContent = `MOSA_APP_VERSION=${version.version} · MOSA_APP_BUILD=${version.build}`;
+}
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({
@@ -37,18 +50,71 @@ function renderFreeModels() {
     freeModels.innerHTML = '<div class="loading">Chưa đọc được danh mục model local.</div>';
     return;
   }
-  freeModels.innerHTML = freeModelCatalog.map((model) => `
-    <article class="free-model-card ${model.available ? "ready" : ""}">
+  const visibleModels = freeModelCatalog.filter((model) => selectedModelTier === "all" || model.installer?.tier === selectedModelTier);
+  freeModels.innerHTML = visibleModels.map((model) => {
+    const installer = model.installer || {};
+    const installing = ["queued", "downloading", "installing_runtime"].includes(installer.status);
+    const installed = Boolean(installer.installed);
+    const needsRuntime = Boolean(installer.weights_installed && installer.runtime_required && !installer.runtime_installed);
+    const canInstall = installer.install_supported && installer.compatible && !installing && !installed;
+    const stateLabel = model.available
+      ? "SẴN SÀNG"
+      : installed
+        ? "ĐÃ TẢI MODEL"
+        : needsRuntime
+          ? "THIẾU RUNTIME"
+        : installing
+          ? `ĐANG TẢI ${installer.progress || 0}%`
+          : "CHƯA SẴN SÀNG";
+    const buttonLabel = installed
+      ? "GỠ MODEL"
+      : needsRuntime
+        ? "CÀI / SỬA RUNTIME"
+      : installing
+        ? `ĐANG TẢI ${installer.progress || 0}%`
+        : installer.install_supported
+          ? "↓ TẢI MODEL"
+          : "KHÔNG HỖ TRỢ TỰ ĐỘNG";
+    return `
+    <article class="free-model-card ${model.available ? "ready" : ""} ${installing ? "installing" : ""}">
       <div class="free-model-topline">
         <span class="free-model-category">${escapeHtml(model.category)}</span>
-        <span class="free-model-state ${model.available ? "ready" : ""}"><i></i>${escapeHtml(model.status_label)}</span>
+        <span class="free-model-state ${model.available ? "ready" : installed ? "installed" : installing ? "installing" : ""}"><i></i>${escapeHtml(stateLabel)}</span>
       </div>
       <h3>${escapeHtml(model.name)}</h3>
       <p>${escapeHtml(model.model)}</p>
       <small>${escapeHtml(model.requirements)}</small>
       <code>${escapeHtml(model.tool)} · ${escapeHtml(model.cost)}</code>
+      ${installer.id ? `
+        <div class="model-install-meta">
+          <span>${escapeHtml(installer.size_label || "—")}</span>
+          <span>RAM ${escapeHtml(installer.min_memory_gb || "—")} GB+</span>
+          <span>${escapeHtml(installer.license || "Không rõ giấy phép")}</span>
+        </div>
+        ${installing ? `<div class="model-progress"><i style="width:${Math.max(2, installer.progress || 0)}%"></i></div>` : ""}
+        <button class="model-install-button ${installed ? "remove" : ""}" type="button" ${installed ? "data-model-remove" : needsRuntime ? "data-model-runtime" : "data-model-install"}="${escapeHtml(installer.id)}" data-license-restricted="${installer.commercial_restricted ? "true" : "false"}" ${canInstall || installed || needsRuntime ? "" : "disabled"}>${escapeHtml(buttonLabel)}</button>
+        ${installer.license_url ? `<a class="model-license-link" href="${escapeHtml(installer.license_url)}" target="_blank" rel="noreferrer">XEM GIẤY PHÉP ↗</a>` : ""}
+        <div class="model-install-detail ${installer.status === "error" || installer.blocked_reason ? "error" : ""}">${escapeHtml(installer.blocked_reason || installer.detail || (installed && !model.available ? "Model đã tải; runtime tương ứng cần được cài hoặc khởi động." : ""))}</div>
+      ` : ""}
     </article>
-  `).join("");
+  `;
+  }).join("");
+
+  const active = freeModelCatalog.some((model) => ["queued", "downloading", "installing_runtime"].includes(model.installer?.status));
+  if (active && !modelPollTimer) {
+    modelPollTimer = window.setInterval(() => refreshFreeModels().catch(console.error), 1200);
+  } else if (!active && modelPollTimer) {
+    window.clearInterval(modelPollTimer);
+    modelPollTimer = null;
+  }
+}
+
+async function refreshFreeModels() {
+  freeModelCatalog = await fetch("/api/free-models").then((response) => {
+    if (!response.ok) throw new Error("Không đọc được trạng thái model");
+    return response.json();
+  });
+  renderFreeModels();
 }
 
 function runtimeCard(label, item) {
@@ -70,6 +136,7 @@ function renderRuntime() {
     runtimeCard("npx / Remotion", { available: runtime.npx?.available && runtime.remotion?.available, version: runtime.npx?.version || runtime.remotion?.composer_dir }),
     runtimeCard("FFmpeg", runtime.ffmpeg),
     runtimeCard("ffprobe", runtime.ffprobe),
+    runtimeCard("uv / Model Runtime", runtime.uv),
   ].join("");
 }
 
@@ -168,6 +235,80 @@ groups.addEventListener("click", (event) => {
   button.textContent = visible ? "HIỆN" : "ẨN";
 });
 
+freeModels.addEventListener("click", async (event) => {
+  const runtimeButton = event.target.closest("button[data-model-runtime]");
+  if (runtimeButton && !runtimeButton.disabled) {
+    const modelId = runtimeButton.dataset.modelRuntime;
+    runtimeButton.disabled = true;
+    setStatus("Đang cài / sửa model runtime…");
+    try {
+      const response = await fetch(`/api/model-installs/${encodeURIComponent(modelId)}/runtime`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Không sửa được runtime");
+      setStatus("Đã bắt đầu cài model runtime.", "success");
+      await refreshFreeModels();
+    } catch (error) {
+      setStatus(error.message || "Không sửa được runtime", "error");
+      await refreshFreeModels().catch(console.error);
+    }
+    return;
+  }
+  const removeButton = event.target.closest("button[data-model-remove]");
+  if (removeButton && !removeButton.disabled) {
+    const modelId = removeButton.dataset.modelRemove;
+    const model = freeModelCatalog.find((item) => item.installer?.id === modelId);
+    if (!window.confirm(`Gỡ ${model?.installer?.label || modelId} và runtime riêng khỏi máy này?`)) return;
+    removeButton.disabled = true;
+    setStatus("Đang gỡ model…");
+    try {
+      const response = await fetch(`/api/model-installs/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Không gỡ được model");
+      setStatus("Đã gỡ model khỏi máy.", "success");
+      await refreshFreeModels();
+    } catch (error) {
+      setStatus(error.message || "Không gỡ được model", "error");
+      await refreshFreeModels().catch(console.error);
+    }
+    return;
+  }
+  const button = event.target.closest("button[data-model-install]");
+  if (!button || button.disabled) return;
+  const modelId = button.dataset.modelInstall;
+  const model = freeModelCatalog.find((item) => item.installer?.id === modelId);
+  const installer = model?.installer;
+  if (!installer) return;
+  const restricted = button.dataset.licenseRestricted === "true";
+  const message = restricted
+    ? `Model này dùng giấy phép ${installer.license} và có thể không phù hợp mục đích thương mại. Bạn xác nhận đã đọc và chấp nhận giấy phép để tải ${installer.size_label}?`
+    : `Tải ${installer.label} (${installer.size_label}) về máy này? App sẽ giữ ít nhất 12 GB dung lượng trống dự phòng.`;
+  if (!window.confirm(message)) return;
+  button.disabled = true;
+  setStatus(`Đang chuẩn bị tải ${installer.label}…`);
+  try {
+    const response = await fetch(`/api/model-installs/${encodeURIComponent(modelId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accept_license: restricted }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || "Không bắt đầu tải được model");
+    setStatus(`Đã bắt đầu tải ${installer.label}. Bạn có thể tiếp tục dùng app trong lúc tải.`, "success");
+    await refreshFreeModels();
+  } catch (error) {
+    setStatus(error.message || "Không tải được model", "error");
+    await refreshFreeModels().catch(console.error);
+  }
+});
+
+document.querySelector(".model-tier-filter")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-model-tier]");
+  if (!button) return;
+  selectedModelTier = button.dataset.modelTier;
+  document.querySelectorAll("button[data-model-tier]").forEach((item) => item.classList.toggle("active", item === button));
+  renderFreeModels();
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const updates = {};
@@ -222,4 +363,5 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+loadAppVersion().catch((error) => setStatus(error.message || "Không đọc được phiên bản app", "error"));
 load().catch((error) => setStatus(error.message || "Không tải được cấu hình", "error"));

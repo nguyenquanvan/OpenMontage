@@ -24,18 +24,20 @@ def configure_bundled_runtime(root: Path | None = None) -> dict[str, str | None]
     root = root or resource_root()
     runtime_root = Path(os.environ.get("OPENMONTAGE_RUNTIME_DIR") or root / "runtime")
     if not runtime_root.is_dir():
-        return {"runtime_dir": None, "ffmpeg": None, "node": None}
+        return {"runtime_dir": None, "ffmpeg": None, "ffprobe": None, "node": None, "uv": None}
 
     if os.name == "nt":
         node_dir = runtime_root / "node"
         ffmpeg_path = runtime_root / "ffmpeg" / "ffmpeg.exe"
         ffprobe_path = runtime_root / "ffmpeg" / "ffprobe.exe"
+        uv_path = runtime_root / "uv" / "uv.exe"
     else:
         node_dir = runtime_root / "node" / "bin"
         ffmpeg_path = runtime_root / "ffmpeg" / "ffmpeg"
         ffprobe_path = runtime_root / "ffmpeg" / "ffprobe"
+        uv_path = runtime_root / "uv" / "uv"
 
-    path_entries = [str(path) for path in (node_dir, ffmpeg_path.parent) if path.is_dir()]
+    path_entries = [str(path) for path in (node_dir, ffmpeg_path.parent, uv_path.parent) if path.is_dir()]
     if path_entries:
         current = os.environ.get("PATH", "")
         os.environ["PATH"] = os.pathsep.join(path_entries + ([current] if current else []))
@@ -45,12 +47,15 @@ def configure_bundled_runtime(root: Path | None = None) -> dict[str, str | None]
         os.environ.setdefault("OPENMONTAGE_FFPROBE_PATH", str(ffprobe_path))
     if node_dir.is_dir():
         os.environ.setdefault("OPENMONTAGE_NODE_DIR", str(node_dir))
+    if uv_path.is_file():
+        os.environ.setdefault("OPENMONTAGE_UV_PATH", str(uv_path))
     os.environ.setdefault("OPENMONTAGE_RUNTIME_DIR", str(runtime_root))
     return {
         "runtime_dir": str(runtime_root),
         "ffmpeg": str(ffmpeg_path) if ffmpeg_path.is_file() else None,
         "ffprobe": str(ffprobe_path) if ffprobe_path.is_file() else None,
         "node": str(node_dir) if node_dir.is_dir() else None,
+        "uv": str(uv_path) if uv_path.is_file() else None,
     }
 
 
@@ -85,6 +90,7 @@ def runtime_status() -> dict[str, Any]:
     node = shutil.which("node")
     npm = shutil.which("npm") or shutil.which("npm.cmd")
     npx = shutil.which("npx") or shutil.which("npx.cmd")
+    uv = shutil.which("uv") or shutil.which("uv.exe")
     return {
         "platform": platform.platform(),
         "architecture": platform.machine(),
@@ -95,6 +101,7 @@ def runtime_status() -> dict[str, Any]:
         "node": {"available": bool(node), "path": node, "version": _version("node")},
         "npm": {"available": bool(npm), "path": npm, "version": _version("npm")},
         "npx": {"available": bool(npx), "path": npx, "version": _version("npx")},
+        "uv": {"available": bool(uv), "path": uv, "version": _version("uv")},
         "remotion": {
             "composer_dir": str(composer),
             "available": composer.is_dir() and (composer / "node_modules").is_dir(),

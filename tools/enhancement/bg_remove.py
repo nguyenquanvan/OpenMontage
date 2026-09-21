@@ -94,7 +94,8 @@ class BgRemove(BaseTool):
             import rembg  # noqa: F401
             return ToolStatus.AVAILABLE
         except ImportError:
-            return ToolStatus.UNAVAILABLE
+            from lib.model_runtime import managed_model_available
+            return ToolStatus.AVAILABLE if managed_model_available("rembg-u2net") else ToolStatus.UNAVAILABLE
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])
@@ -111,9 +112,16 @@ class BgRemove(BaseTool):
         try:
             import rembg
         except ImportError:
-            return ToolResult(
-                success=False,
-                error="rembg is not installed. Run: pip install rembg",
+            from lib.model_runtime import run_model_worker
+            return run_model_worker(
+                "rembg-u2net",
+                "rembg_remove",
+                {
+                    "input_path": str(input_path),
+                    "output_path": str(output_path),
+                    "model": model_name,
+                    "alpha_matting": alpha_matting,
+                },
             )
 
         try:

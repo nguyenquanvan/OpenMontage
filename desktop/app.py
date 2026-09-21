@@ -1,4 +1,4 @@
-"""OpenMontage desktop launcher.
+"""MOSA TOOL ALL desktop launcher.
 
 The desktop shell owns a local Backlot server and presents it in a native
 pywebview window. Project data and API keys live in the user's OS data folder,
@@ -18,10 +18,11 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
+from lib.app_version import APP_NAME, APP_VERSION
 from lib.runtime import configure_bundled_runtime
 
 
-APP_NAME = "OpenMontage"
+LEGACY_APP_NAME = "OpenMontage"
 DEFAULT_PORT = 4750
 
 
@@ -32,10 +33,13 @@ def user_data_dir() -> Path:
         return Path(override).expanduser()
     if sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-        return base / APP_NAME
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / APP_NAME
-    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / APP_NAME
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    preferred = base / APP_NAME
+    legacy = base / LEGACY_APP_NAME
+    return legacy if legacy.is_dir() and not preferred.exists() else preferred
 
 
 def configure_user_paths(data_dir: Path) -> None:
@@ -59,7 +63,7 @@ def choose_port(preferred: int = DEFAULT_PORT) -> int:
             except OSError:
                 continue
             return int(probe.getsockname()[1])
-    raise RuntimeError("Không tìm được cổng local để chạy OpenMontage")
+    raise RuntimeError(f"Không tìm được cổng local để chạy {APP_NAME}")
 
 
 def wait_for_server(port: int, timeout: float = 20.0) -> None:
@@ -92,7 +96,7 @@ def start_server(port: int) -> Any:
         access_log=False,
     )
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, name="openmontage-backlot", daemon=True)
+    thread = threading.Thread(target=server.run, name="mosa-tool-all-backlot", daemon=True)
     thread.start()
     wait_for_server(port)
     return server
@@ -110,7 +114,7 @@ def open_window(url: str, *, browser_only: bool = False) -> None:
         return
 
     webview.create_window(
-        APP_NAME,
+        f"{APP_NAME} {APP_VERSION}",
         url,
         width=1440,
         height=920,
@@ -121,9 +125,14 @@ def open_window(url: str, *, browser_only: bool = False) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="OpenMontage")
+    parser = argparse.ArgumentParser(prog=APP_NAME)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--browser", action="store_true", help="Mở bằng trình duyệt thay vì cửa sổ native")
+    parser.add_argument(
+        "--server-only",
+        action="store_true",
+        help="Chỉ chạy Backlot server, dùng cho kiểm tra bản đóng gói",
+    )
     args = parser.parse_args(argv)
 
     data_dir = user_data_dir()
@@ -133,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     server = start_server(port)
     url = f"http://127.0.0.1:{port}/"
     try:
+        if args.server_only:
+            while True:
+                time.sleep(3600)
         open_window(url, browser_only=args.browser)
         if args.browser:
             # Keep the local server alive when running the explicit browser mode.

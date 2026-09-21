@@ -11,6 +11,14 @@ python -m backlot open                # library view (all projects)
 python -m backlot serve --port 4750   # run the server in the foreground
 ```
 
+The MOSA TOOL ALL desktop board also has **BẮT ĐẦU WORKFLOW** on each project.
+It asks for a production brief, then starts an installed `codex` or `claude`
+agent in the project workspace. The agent remains the orchestrator: it reads
+the manifest and skills, calls configured tools, and writes checkpoints back to
+the board. The confirmation checkbox is required before an agent can execute
+workspace commands. If neither CLI is installed, use the API settings page to
+finish local setup or install one of the supported agents.
+
 ## How it stays live
 
 No agent involvement. A `watchfiles` watcher on `projects/` publishes change

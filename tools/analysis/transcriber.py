@@ -101,7 +101,8 @@ class Transcriber(BaseTool):
             import faster_whisper  # noqa: F401
             return ToolStatus.AVAILABLE
         except ImportError:
-            return ToolStatus.UNAVAILABLE
+            from lib.model_runtime import managed_model_available
+            return ToolStatus.AVAILABLE if managed_model_available("whisper-local") else ToolStatus.UNAVAILABLE
 
     def _has_diarization(self) -> bool:
         try:
@@ -129,9 +130,15 @@ class Transcriber(BaseTool):
         try:
             from faster_whisper import WhisperModel
         except ImportError:
-            return ToolResult(
-                success=False,
-                error="faster-whisper is not installed. Run: pip install faster-whisper",
+            from lib.model_runtime import run_model_worker
+            return run_model_worker(
+                "whisper-local",
+                "faster_whisper_transcribe",
+                {
+                    "input_path": str(input_path),
+                    "output_path": str(output_dir / f"{input_path.stem}_transcript.json"),
+                    "language": language,
+                },
             )
 
         start = time.time()

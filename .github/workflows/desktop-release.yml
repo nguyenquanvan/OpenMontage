@@ -15,9 +15,9 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            artifact: openmontage-macos
+            artifact: mosa-tool-all-macos
           - os: windows-latest
-            artifact: openmontage-windows
+            artifact: mosa-tool-all-windows
 
     steps:
       - name: Checkout
@@ -40,12 +40,65 @@ jobs:
       - name: Package macOS DMG
         if: runner.os == 'macOS'
         run: |
-          hdiutil create -volname OpenMontage -srcfolder dist/OpenMontage.app -ov -format UDZO dist/OpenMontage-macOS.dmg
+          hdiutil create -volname "MOSA TOOL ALL" -srcfolder "dist/MOSA TOOL ALL.app" -ov -format UDZO "dist/MOSA-TOOL-ALL-macOS.dmg"
 
       - name: Package Windows ZIP
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist/OpenMontage -DestinationPath dist/OpenMontage-Windows.zip -Force
+        run: Compress-Archive -Path "dist/MOSA TOOL ALL" -DestinationPath "dist/MOSA-TOOL-ALL-Windows.zip" -Force
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Package Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = python -c "from lib.app_version import APP_VERSION; print(APP_VERSION)"
+          $build = python -c "from lib.app_version import APP_BUILD; print(APP_BUILD)"
+          $source = (Resolve-Path "dist/MOSA TOOL ALL").Path
+          $output = (Resolve-Path "dist").Path
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVersion=$version" "/DAppBuild=$build" "/DSourceDir=$source" "/DOutputDir=$output" "packaging/windows-installer.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke test installed Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "dist/MOSA-TOOL-ALL-Setup-*-win-x64.exe" | Select-Object -First 1
+          $expectedVersion = python -c "from lib.app_version import APP_VERSION; print(APP_VERSION)"
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\MOSA TOOL ALL\MOSA TOOL ALL.exe"
+          if (-not (Test-Path $app)) { throw "Installed executable not found: $app" }
+          $env:OPENMONTAGE_DATA_DIR = Join-Path $env:RUNNER_TEMP "mosa-tool-all-smoke"
+          $process = Start-Process -FilePath $app -ArgumentList "--server-only", "--port", "4762" -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              try {
+                $version = Invoke-RestMethod "http://127.0.0.1:4762/api/version" -TimeoutSec 2
+                $runtime = Invoke-RestMethod "http://127.0.0.1:4762/api/runtime" -TimeoutSec 2
+                if ($version.version -eq $expectedVersion -and $runtime.node.available -and $runtime.ffmpeg.available -and $runtime.uv.available) {
+                  $ready = $true
+                  break
+                }
+              } catch {}
+              Start-Sleep -Seconds 1
+            }
+            if (-not $ready) { throw "Installed Windows app did not pass version/runtime smoke test" }
+          } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -53,6 +106,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: |
             dist/*.dmg
+            dist/*-Setup-*.exe
             dist/*.zip
           if-no-files-found: error
 
@@ -67,13 +121,13 @@ jobs:
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
-          name: openmontage-macos
+          name: mosa-tool-all-macos
           path: release
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: openmontage-windows
+          name: mosa-tool-all-windows
           path: release
 
       - name: Publish GitHub release

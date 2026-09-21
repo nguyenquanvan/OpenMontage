@@ -36,6 +36,14 @@ function renderThemeToggle() {
 applyTheme(currentTheme);
 document.getElementById("liveBadge").before(renderThemeToggle());
 
+async function renderAppVersion() {
+  const version = await getJSON("/api/version");
+  const badge = document.getElementById("appVersion");
+  if (!badge) return;
+  badge.textContent = version.label;
+  badge.title = `Phiên bản ${version.version} · build ${version.build}`;
+}
+
 const CATEGORY_LABELS = {
   generated: "AI tổng hợp",
   animation: "Hoạt hình",
@@ -69,6 +77,14 @@ function slugify(value) {
 function setNewProjectStatus(message, kind = "") {
   newProjectStatus.textContent = message;
   newProjectStatus.className = `new-project-status ${kind}`.trim();
+}
+
+function projectRequestError(error) {
+  const message = String(error?.message || "");
+  if (error instanceof TypeError || message.toLowerCase() === "failed to fetch") {
+    return "Không kết nối được với máy chủ local. Hãy mở lại MOSA TOOL ALL rồi thử lại.";
+  }
+  return message || "Không tạo được dự án";
 }
 
 function workflowCard(workflow) {
@@ -161,7 +177,7 @@ newProjectForm.addEventListener("submit", async (event) => {
     if (!response.ok) throw new Error(result.detail || "Không tạo được dự án");
     window.location.href = result.url;
   } catch (error) {
-    setNewProjectStatus(error.message || "Không tạo được dự án", "error");
+    setNewProjectStatus(projectRequestError(error), "error");
     submit.disabled = false;
   }
 });
@@ -223,6 +239,7 @@ async function render() {
 }
 
 render().catch(console.error);
+renderAppVersion().catch((error) => console.error("Không đọc được phiên bản app", error));
 renderWorkflows().catch((error) => {
   workflowList.replaceChildren(el("div", { class: "workflow-loading error" }, "Không tải được danh mục luồng làm việc."));
   console.error(error);

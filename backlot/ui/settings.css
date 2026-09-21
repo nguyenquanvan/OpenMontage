@@ -47,6 +47,9 @@ code { color: var(--text); }
 .free-model-panel { margin: 18px 0; padding: 20px; border: 1px solid rgba(106,161,255,.32); border-radius: 12px; background: linear-gradient(135deg, rgba(106,161,255,.10), rgba(16,16,19,.86)); }
 .free-model-copy h2 { margin: 7px 0 6px; font-size: 17px; letter-spacing: .04em; }
 .free-model-copy p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.model-tier-filter { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+.model-tier-filter button { padding: 7px 10px; border: 1px solid var(--border); border-radius: 999px; background: rgba(10,10,12,.65); color: var(--text-3); cursor: pointer; font: 600 9px var(--mono); letter-spacing: .06em; }
+.model-tier-filter button:hover, .model-tier-filter button.active { color: var(--amber); border-color: rgba(240,168,60,.55); background: rgba(240,168,60,.09); }
 .free-model-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
 .free-model-card { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: rgba(10,10,12,.62); }
 .free-model-card.ready { border-color: rgba(79,194,131,.42); }
@@ -59,7 +62,29 @@ code { color: var(--text); }
 .free-model-card p { margin: 0 0 8px; color: var(--blue); font: 11px var(--mono); overflow-wrap: anywhere; }
 .free-model-card small { display: block; min-height: 34px; color: var(--text-3); font-size: 11px; line-height: 1.4; }
 .free-model-card code { display: block; margin-top: 12px; color: var(--text-2); font-size: 10px; overflow-wrap: anywhere; }
+.free-model-card.installing { border-color: rgba(240,168,60,.48); }
+.free-model-state.installed { color: var(--blue); }
+.free-model-state.installing { color: var(--amber); }
+.model-install-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+.model-install-meta span { padding: 3px 6px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-3); font: 9px var(--mono); }
+.model-progress { height: 5px; margin-top: 12px; overflow: hidden; border-radius: 999px; background: #08080a; }
+.model-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--amber), #ffd37b); transition: width .25s ease; }
+.model-install-button { width: 100%; margin-top: 12px; padding: 9px 10px; border: 1px solid rgba(240,168,60,.5); border-radius: 7px; background: rgba(240,168,60,.11); color: var(--amber); cursor: pointer; font: 600 10px var(--mono); letter-spacing: .06em; }
+.model-install-button:hover:not(:disabled) { background: var(--amber); color: #17130d; }
+.model-install-button:disabled { cursor: not-allowed; border-color: var(--border); background: rgba(255,255,255,.025); color: var(--text-3); }
+.model-install-button.remove { border-color: rgba(229,84,75,.45); background: rgba(229,84,75,.08); color: var(--red); }
+.model-install-button.remove:hover:not(:disabled) { background: var(--red); color: white; }
+.model-license-link { display: inline-block; margin-top: 8px; color: var(--blue); font: 9px var(--mono); text-decoration: none; }
+.model-license-link:hover { text-decoration: underline; }
+.model-install-detail { min-height: 14px; margin-top: 8px; color: var(--text-3); font-size: 10px; line-height: 1.35; }
+.model-install-detail.error { color: var(--red); }
 .runtime-panel { margin: 18px 0; padding: 20px; border: 1px solid rgba(79,194,131,.32); border-radius: 12px; background: linear-gradient(135deg, rgba(79,194,131,.10), rgba(16,16,19,.86)); }
+.version-panel { display: flex; justify-content: space-between; gap: 24px; align-items: center; margin: 18px 0; padding: 18px 20px; border: 1px solid rgba(240,168,60,.35); border-radius: 12px; background: linear-gradient(135deg, rgba(240,168,60,.10), rgba(16,16,19,.86)); }
+.version-panel h2 { margin: 7px 0 6px; font-size: 17px; letter-spacing: .04em; }
+.version-panel p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.version-value { display: grid; gap: 7px; min-width: 230px; text-align: right; }
+.version-value strong { color: var(--amber); font: 600 18px var(--mono); }
+.version-value code { color: var(--text-3); font-size: 10px; overflow-wrap: anywhere; }
 .runtime-copy h2 { margin: 7px 0 6px; font-size: 17px; letter-spacing: .04em; }
 .runtime-copy p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; }
 .runtime-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
@@ -135,6 +160,8 @@ code { color: var(--text); }
   nav { justify-content: flex-start; margin-top: 20px; }
   .security-note { display: block; }
   .security-note span { display: block; margin-top: 7px; }
+  .version-panel { display: block; }
+  .version-value { min-width: 0; margin-top: 14px; text-align: left; }
   .cost-panel { grid-template-columns: 1fr; }
   .cost-note { grid-column: auto; }
   .provider-list { grid-template-columns: 1fr; }

@@ -642,6 +642,7 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         "title": marker.get("title") or meta_json.get("name") or project_id.replace("-", " ").title(),
         "pipeline": pipeline_meta,
         "style_playbook": marker.get("style_playbook"),
+        "brief": marker.get("brief") or "",
         "created_at": marker.get("created_at"),
         "has_marker": bool(marker),
         "has_pipeline_state": bool(checkpoints),

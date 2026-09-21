@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNTIME_ROOT = ROOT / "packaging" / "runtime"
 DOWNLOAD_ROOT = ROOT / "packaging" / ".runtime-downloads"
 DEFAULT_NODE_VERSION = "24.14.1"
+DEFAULT_UV_VERSION = "0.12.17"
 FFPROBE_PACKAGES = {
     ("darwin", "arm64"): ("darwin-arm64", "5.0.1"),
     ("darwin", "x64"): ("darwin-x64", "5.1.0"),
@@ -105,6 +106,45 @@ def extract_node(version: str, force: bool) -> dict[str, str]:
     return {"version": version, "target": target, "architecture": architecture}
 
 
+def extract_uv(version: str, force: bool) -> dict[str, str]:
+    target, architecture = target_platform()
+    if target == "darwin":
+        uv_target = f"{'aarch64' if architecture == 'arm64' else 'x86_64'}-apple-darwin"
+        extension = "tar.gz"
+    elif target == "win" and architecture == "x64":
+        uv_target = "x86_64-pc-windows-msvc"
+        extension = "zip"
+    else:
+        uv_target = f"{'aarch64' if architecture == 'arm64' else 'x86_64'}-unknown-linux-gnu"
+        extension = "tar.gz"
+    archive_name = f"uv-{uv_target}.{extension}"
+    url = f"https://github.com/astral-sh/uv/releases/download/{version}/{archive_name}"
+    archive = download(url, DOWNLOAD_ROOT / f"uv-{version}-{uv_target}.{extension}")
+    destination = RUNTIME_ROOT / "uv"
+    marker = destination / ".openmontage-uv-version"
+    executable_name = "uv.exe" if target == "win" else "uv"
+    executable = destination / executable_name
+    if marker.is_file() and executable.is_file() and not force and marker.read_text().strip() == version:
+        return {"version": version, "target": uv_target, "executable": executable_name}
+    clean_directory(destination)
+    with tempfile.TemporaryDirectory(prefix="openmontage-uv-") as temporary:
+        extraction = Path(temporary)
+        if extension == "zip":
+            with zipfile.ZipFile(archive) as bundle:
+                bundle.extractall(extraction)
+        else:
+            with tarfile.open(archive, "r:gz") as bundle:
+                bundle.extractall(extraction, filter="data")
+        matches = list(extraction.rglob(executable_name))
+        if not matches:
+            raise RuntimeError(f"Unexpected uv archive layout: {archive}")
+        shutil.copy2(matches[0], executable)
+    if target != "win":
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    marker.write_text(version + "\n")
+    return {"version": version, "target": uv_target, "executable": executable_name}
+
+
 def copy_ffmpeg(force: bool) -> dict[str, object]:
     destination = RUNTIME_ROOT / "ffmpeg"
     destination.mkdir(parents=True, exist_ok=True)
@@ -170,15 +210,18 @@ def _portable_ffprobe(source: Path) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node-version", default=os.environ.get("OPENMONTAGE_NODE_VERSION", DEFAULT_NODE_VERSION))
+    parser.add_argument("--uv-version", default=os.environ.get("OPENMONTAGE_UV_VERSION", DEFAULT_UV_VERSION))
     parser.add_argument("--force", action="store_true", help="Replace an existing runtime")
     args = parser.parse_args()
 
     RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
     node = extract_node(args.node_version, args.force)
+    uv = extract_uv(args.uv_version, args.force)
     ffmpeg = copy_ffmpeg(args.force)
     ffprobe = copy_ffprobe(args.force)
     manifest = {
         "node": node,
+        "uv": uv,
         "ffmpeg": ffmpeg,
         "ffprobe": ffprobe,
         "platform": sys_platform(),

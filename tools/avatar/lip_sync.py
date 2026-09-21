@@ -121,6 +121,10 @@ class LipSync(BaseTool):
         except ImportError:
             pass
 
+        from lib.model_runtime import managed_model_available
+        if managed_model_available("wav2lip-research"):
+            return ToolStatus.AVAILABLE
+
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
@@ -139,6 +143,15 @@ class LipSync(BaseTool):
             import wav2lip
             return Path(wav2lip.__file__).parent
         except (ImportError, AttributeError):
+            pass
+
+        try:
+            from backlot.model_installer import model_runtime_info
+            info = model_runtime_info("wav2lip-research")
+            managed_path = Path(info["target"]) / "source" / "Wav2Lip-master"
+            if info.get("installed") and managed_path.is_dir():
+                return managed_path
+        except ValueError:
             pass
 
         return None
@@ -190,8 +203,17 @@ class LipSync(BaseTool):
 
         start = time.time()
 
+        python = "python"
+        try:
+            from backlot.model_installer import model_runtime_info
+            info = model_runtime_info("wav2lip-research")
+            if info.get("installed") and info.get("python"):
+                python = info["python"]
+        except ValueError:
+            pass
+
         cmd = [
-            "python", str(inference_script),
+            python, str(inference_script),
             "--checkpoint_path", str(checkpoint),
             "--face", str(video_path),
             "--audio", str(audio_path),

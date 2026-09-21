@@ -117,7 +117,8 @@ class Upscale(BaseTool):
             import realesrgan  # noqa: F401
             return ToolStatus.AVAILABLE
         except ImportError:
-            return ToolStatus.UNAVAILABLE
+            from lib.model_runtime import managed_model_available
+            return ToolStatus.AVAILABLE if managed_model_available("realesrgan") else ToolStatus.UNAVAILABLE
 
     # ------------------------------------------------------------------
     # Execution
@@ -140,6 +141,23 @@ class Upscale(BaseTool):
         denoise_strength = inputs.get("denoise_strength", 0.5)
 
         start = time.time()
+
+        try:
+            import realesrgan  # noqa: F401
+        except ImportError:
+            if is_video:
+                return ToolResult(success=False, error="Video upscale cần runtime PyTorch trong tiến trình chính; hãy dùng ảnh hoặc ComfyUI cho video.")
+            from lib.model_runtime import run_model_worker
+            return run_model_worker(
+                "realesrgan",
+                "realesrgan_upscale",
+                {
+                    "input_path": str(input_path),
+                    "output_path": str(output_path),
+                    "scale": scale,
+                    "model": model_name,
+                },
+            )
 
         try:
             if is_video:

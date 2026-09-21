@@ -1,1 +1,1 @@
-"""Desktop launcher for the OpenMontage Backlot application."""
+"""Desktop launcher for the MOSA TOOL ALL Backlot application."""

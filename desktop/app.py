@@ -24,6 +24,20 @@ from lib.runtime import configure_bundled_runtime
 
 LEGACY_APP_NAME = "OpenMontage"
 DEFAULT_PORT = 4750
+_STDIO_SINKS: list[Any] = []
+
+
+def _open_stdio_sink() -> Any:
+    return open(os.devnull, "w", encoding="utf-8")
+
+
+def ensure_standard_streams() -> None:
+    """Provide harmless streams for windowed builds without a console."""
+    for stream_name in ("stdout", "stderr"):
+        if getattr(sys, stream_name) is None:
+            sink = _open_stdio_sink()
+            _STDIO_SINKS.append(sink)
+            setattr(sys, stream_name, sink)
 
 
 def user_data_dir() -> Path:
@@ -83,18 +97,26 @@ def wait_for_server(port: int, timeout: float = 20.0) -> None:
     raise RuntimeError(f"Backlot không khởi động được{detail}")
 
 
+def server_config(application: Any, port: int) -> Any:
+    """Build a Uvicorn config that is safe for a windowed desktop app."""
+    import uvicorn
+
+    return uvicorn.Config(
+        application,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+        access_log=False,
+        log_config=None,
+    )
+
+
 def start_server(port: int) -> Any:
     """Start Uvicorn in a daemon thread and return its server object."""
     import uvicorn
     from backlot.server import app
 
-    config = uvicorn.Config(
-        app,
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
+    config = server_config(app, port)
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, name="mosa-tool-all-backlot", daemon=True)
     thread.start()
@@ -125,6 +147,7 @@ def open_window(url: str, *, browser_only: bool = False) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    ensure_standard_streams()
     parser = argparse.ArgumentParser(prog=APP_NAME)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--browser", action="store_true", help="Mở bằng trình duyệt thay vì cửa sổ native")

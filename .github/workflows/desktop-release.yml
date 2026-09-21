@@ -101,6 +101,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Bundled ffprobe failed" }
           & (Join-Path $runtimeRoot "uv\uv.exe") --version
           if ($LASTEXITCODE -ne 0) { throw "Bundled uv failed" }
+          $env:OPENMONTAGE_DATA_DIR = Join-Path $env:RUNNER_TEMP "mosa-tool-all-smoke"
+          $port = 4762
+          $server = Start-Process -FilePath $app -ArgumentList "--server-only", "--port", "$port" -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $response = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/version" -TimeoutSec 2
+                if ($response.version -eq $version -and $response.build -eq $build) {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                if ($server.HasExited) {
+                  throw "Installed MOSA server exited with code $($server.ExitCode): $($_.Exception.Message)"
+                }
+              }
+            }
+            if (-not $ready) { throw "Installed MOSA server did not answer /api/version" }
+          } finally {
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+          }
 
       - name: Upload artifact
         if: always()

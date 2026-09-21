@@ -84,23 +84,52 @@ jobs:
           $process = Start-Process -FilePath $app -ArgumentList "--server-only", "--port", "4762" -PassThru
           try {
             $ready = $false
+            $lastError = ""
             for ($attempt = 0; $attempt -lt 60; $attempt++) {
               try {
                 $version = Invoke-RestMethod "http://127.0.0.1:4762/api/version" -TimeoutSec 2
-                $runtime = Invoke-RestMethod "http://127.0.0.1:4762/api/runtime" -TimeoutSec 2
-                if ($version.version -eq $expectedVersion -and $runtime.node.available -and $runtime.ffmpeg.available -and $runtime.uv.available) {
+                if ($version.version -eq $expectedVersion) {
                   $ready = $true
                   break
                 }
-              } catch {}
+              } catch {
+                $lastError = $_.Exception.Message
+              }
+              if ($process.HasExited) { break }
               Start-Sleep -Seconds 1
             }
-            if (-not $ready) { throw "Installed Windows app did not pass version/runtime smoke test" }
+            if (-not $ready) {
+              $exitCode = if ($process.HasExited) { $process.ExitCode } else { "running" }
+              throw "Installed Windows app did not start correctly. exited=$($process.HasExited) code=$exitCode last_error=$lastError"
+            }
+            $installRoot = Split-Path $app
+            $runtimeRoot = Join-Path $installRoot "_internal\runtime"
+            $checks = @(
+              (Join-Path $runtimeRoot "node\node.exe"),
+              (Join-Path $runtimeRoot "ffmpeg\ffmpeg.exe"),
+              (Join-Path $runtimeRoot "ffmpeg\ffprobe.exe"),
+              (Join-Path $runtimeRoot "uv\uv.exe"),
+              (Join-Path $installRoot "_internal\remotion-composer\node_modules")
+            )
+            foreach ($path in $checks) {
+              if (-not (Test-Path $path)) { throw "Bundled runtime path missing: $path" }
+            }
+            & (Join-Path $runtimeRoot "node\node.exe") --version
+            if ($LASTEXITCODE -ne 0) { throw "Bundled Node.js failed" }
+            & (Join-Path $runtimeRoot "ffmpeg\ffmpeg.exe") -version
+            if ($LASTEXITCODE -ne 0) { throw "Bundled FFmpeg failed" }
+            & (Join-Path $runtimeRoot "ffmpeg\ffprobe.exe") -version
+            if ($LASTEXITCODE -ne 0) { throw "Bundled ffprobe failed" }
+            & (Join-Path $runtimeRoot "uv\uv.exe") --version
+            if ($LASTEXITCODE -ne 0) { throw "Bundled uv failed" }
+            $models = Invoke-RestMethod "http://127.0.0.1:4762/api/model-installs" -TimeoutSec 10
+            if ($models.Count -lt 20) { throw "Model Center catalog is incomplete: $($models.Count) entries" }
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           }
 
       - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

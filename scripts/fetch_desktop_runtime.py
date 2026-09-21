@@ -162,9 +162,9 @@ def copy_ffprobe(force: bool) -> dict[str, object]:
     """Bundle an architecture-matched ffprobe package when available."""
     destination = RUNTIME_ROOT / "ffmpeg"
     destination.mkdir(parents=True, exist_ok=True)
-    executable_name = "ffprobe.exe" if os.name == "nt" else "ffprobe"
-    target = destination / executable_name
     target_name, architecture = target_platform()
+    executable_name = "ffprobe.exe" if target_name == "win" else "ffprobe"
+    target = destination / executable_name
     package = FFPROBE_PACKAGES.get((target_name, architecture))
     if package:
         package_name, version = package
@@ -175,7 +175,7 @@ def copy_ffprobe(force: bool) -> dict[str, object]:
             extraction = Path(temporary)
             with tarfile.open(archive, "r:gz") as bundle:
                 bundle.extractall(extraction, filter="data")
-            source_path = extraction / "package" / "ffprobe"
+            source_path = extraction / "package" / executable_name
             if not source_path.is_file():
                 raise RuntimeError(f"Unexpected ffprobe archive layout: {archive}")
             shutil.copy2(source_path, target)

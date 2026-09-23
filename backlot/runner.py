@@ -758,6 +758,8 @@ def start_run(
     current = get_run(project_id)
     if current.get("status") in {"starting", "running"}:
         raise ValueError("Workflow của dự án này đang chạy")
+    if not allow_automation:
+        raise ValueError("Hãy bật 'Cho phép agent chạy lệnh tự động' trước khi bắt đầu")
 
     marker = _load_marker(project_dir)
     resolved_agent, executable = _resolve_agent(agent)

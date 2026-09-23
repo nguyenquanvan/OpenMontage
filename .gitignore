@@ -19,6 +19,7 @@ htmlcov/
 .trae/
 .idea/
 .vscode/
+.playwright-cli/
 
 # Pipeline outputs (regenerable — never commit large media)
 output/

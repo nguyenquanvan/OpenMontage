@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,17 +19,34 @@ from typing import Any
 
 from backlot import state as state_mod
 from lib.paths import REPO_ROOT
-from lib.checkpoint import get_pipeline_stages, write_checkpoint
+from lib.checkpoint import get_next_stage, get_pipeline_stages, write_checkpoint
 from lib.events import emit_event
 
 RUN_FILENAME = "agent_run.json"
 PROMPT_FILENAME = "agent_prompt.md"
 LOG_FILENAME = "agent_run.log"
 MAX_BRIEF_LENGTH = 12_000
+MAX_REVIEW_NOTE_LENGTH = 4_000
 
 _PROCESS_LOCK = threading.Lock()
 _PROCESSES: dict[str, subprocess.Popen] = {}
 _LOG_HANDLES: dict[str, Any] = {}
+
+
+def _ollama_stage_blocker(pipeline_type: str | None, stage: str | None) -> str | None:
+    if pipeline_type == "health-infographic" and stage == "research":
+        return (
+            "Bước nghiên cứu y khoa cần truy cập nguồn web và trích dẫn kiểm chứng. "
+            "Ollama Local đang chạy offline nên không thể hoàn thành an toàn. "
+            "Hãy chọn Tự chọn, Codex hoặc Claude; Ollama/Granite vẫn dùng được cho các bước local sau."
+        )
+    if pipeline_type == "documentary-montage":
+        return (
+            "Quy trình phóng sự cần tìm kiếm và tải footage thật từ các nguồn web như "
+            "Pexels, Archive.org, NASA và Wikimedia. Ollama Local chỉ được cấp tool offline "
+            "nên không thể hoàn thành pipeline này. Hãy chọn Tự chọn, Codex hoặc Claude."
+        )
+    return None
 
 
 def _now() -> str:
@@ -51,6 +69,70 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     os.replace(temp, path)
+
+
+def _run_failure_detail(project_dir: Path, fallback: str) -> str:
+    try:
+        lines = (project_dir / LOG_FILENAME).read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines()
+    except OSError:
+        return fallback
+    recent = "\n".join(lines[-160:])
+    lowered = recent.lower()
+    if (
+        "oauth access token is invalid" in lowered
+        or "failed to authenticate" in lowered
+        or "authentication failed" in lowered
+        or "401" in lowered and "oauth" in lowered
+    ):
+        return (
+            "Claude Code chưa xác thực được (OAuth token không hợp lệ). "
+            "Hãy chạy `claude auth login` trong Terminal, đăng nhập lại tài khoản Claude, "
+            "sau đó bấm 'Bắt đầu workflow' để thử lại; dữ liệu dự án vẫn được giữ nguyên."
+        )
+    if "hit your usage limit" in lowered or "usage limit" in lowered:
+        return (
+            "Agent Codex đã hết hạn mức sử dụng. Hãy chọn Claude Code hoặc thử lại sau khi "
+            "hạn mức được đặt lại; dữ liệu dự án vẫn được giữ nguyên."
+        )
+    for line in reversed(lines[-80:]):
+        text = line.strip()
+        if "LỖI:" in text:
+            return text.split("LỖI:", 1)[1].strip()[:500] or fallback
+    return fallback
+
+
+def _fail_active_checkpoint(project_dir: Path, error: str, run: dict[str, Any]) -> None:
+    marker = _read_json(project_dir / "project.json") or {}
+    pipeline_type = marker.get("pipeline_type")
+    project_id = str(marker.get("project_id") or project_dir.name)
+    try:
+        stages = get_pipeline_stages(pipeline_type)
+    except Exception:
+        return
+    for stage in stages:
+        checkpoint = _read_json(project_dir / f"checkpoint_{stage}.json")
+        if not checkpoint or checkpoint.get("status") != "in_progress":
+            continue
+        try:
+            write_checkpoint(
+                project_dir.parent,
+                project_id,
+                stage,
+                "failed",
+                checkpoint.get("artifacts") or {},
+                pipeline_type=pipeline_type,
+                error=error,
+                metadata={
+                    **(checkpoint.get("metadata") or {}),
+                    "runner": run.get("agent"),
+                    "model": run.get("model"),
+                },
+            )
+        except Exception:
+            pass
+        return
 
 
 def _pid_alive(pid: Any) -> bool:
@@ -79,6 +161,7 @@ def _refresh_run(project_id: str, project_dir: Path, run: dict[str, Any] | None)
             "error": "Agent đã dừng trước khi ghi nhận hoàn tất.",
         }
         _write_json(_run_path(project_dir), run)
+        _fail_active_checkpoint(project_dir, run["error"], run)
     return run
 
 
@@ -92,13 +175,42 @@ def available_agents() -> list[dict[str, Any]]:
     for name, label in (("codex", "Codex"), ("claude", "Claude Code")):
         executable = shutil.which(name)
         agents.append({"name": name, "label": label, "available": bool(executable)})
+    from backlot.ollama_agent import DEFAULT_MODEL, model_pull_status, ollama_status
+
+    ollama = ollama_status()
+    agents.append({
+        "name": "ollama",
+        "label": "Ollama — miễn phí trên máy",
+        "available": bool(ollama["online"] and ollama["models"]),
+        "online": ollama["online"],
+        "models": ollama["models"],
+        "recommended_model": DEFAULT_MODEL,
+        "installer": model_pull_status(DEFAULT_MODEL),
+        "detail": (
+            f"Sẵn sàng với {len(ollama['models'])} model local."
+            if ollama["models"]
+            else "Ollama đang chạy nhưng chưa có model."
+            if ollama["online"]
+            else ollama["error"]
+        ),
+        "setup_url": "https://ollama.com/download",
+    })
     return agents
 
 
 def _resolve_agent(requested: str | None) -> tuple[str, str]:
     choice = (requested or "auto").strip().lower()
-    if choice not in {"auto", "codex", "claude"}:
+    if choice not in {"auto", "codex", "claude", "ollama"}:
         raise ValueError("Agent không hợp lệ")
+    if choice == "ollama":
+        from backlot.ollama_agent import ollama_status
+
+        status = ollama_status(timeout=2.0)
+        if not status["online"]:
+            raise ValueError(status["error"])
+        if not status["models"]:
+            raise ValueError("Ollama chưa có model. Hãy tải Llama 3.1 8B trong cửa sổ workflow.")
+        return "ollama", sys.executable
     candidates = ("codex", "claude") if choice == "auto" else (choice,)
     for name in candidates:
         executable = shutil.which(name)
@@ -114,8 +226,186 @@ def _load_marker(project_dir: Path) -> dict[str, Any]:
     return marker
 
 
-def _build_prompt(project_id: str, project_dir: Path, marker: dict[str, Any], brief: str) -> str:
+def _materialize_checkpoint_artifacts(
+    project_dir: Path,
+    artifacts: dict[str, Any],
+) -> dict[str, Any]:
+    materialized: dict[str, Any] = {}
+    for name, value in artifacts.items():
+        if isinstance(value, dict):
+            materialized[name] = _normalize_legacy_artifact(project_dir, name, value)
+            continue
+        if isinstance(value, str):
+            resolved = state_mod._resolve_artifact(project_dir, value)
+            if isinstance(resolved, dict):
+                materialized[name] = _normalize_legacy_artifact(project_dir, name, resolved)
+                continue
+        raise ValueError(
+            f"Không đọc được artifact '{name}'. Hãy tạo lại tài liệu của stage này trước khi duyệt."
+        )
+    return materialized
+
+
+def _number(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _thematic_question(project_dir: Path) -> str | None:
+    brief = state_mod._resolve_artifact(project_dir, "artifacts/brief.json") or {}
+    metadata = brief.get("metadata") or {}
+    documentary = metadata.get("documentary_montage") or {}
+    value = documentary.get("thematic_question") or metadata.get("thematic_question")
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _normalize_legacy_scene_plan(project_dir: Path, artifact: dict[str, Any]) -> dict[str, Any]:
+    acts = artifact.get("acts")
+    if not isinstance(acts, list) or not acts:
+        return artifact
+
+    source_scenes: list[tuple[int, dict[str, Any]]] = []
+    for act_index, act in enumerate(acts):
+        if not isinstance(act, dict):
+            continue
+        for scene in act.get("scenes") or []:
+            if isinstance(scene, dict):
+                source_scenes.append((act_index, scene))
+
+    scenes = []
+    slots = []
+    for index, (act_index, scene) in enumerate(source_scenes):
+        start = _number(scene.get("time_in"), 0.0)
+        duration = max(0.1, _number(scene.get("duration"), 0.0))
+        end = _number(scene.get("time_out"), start + duration)
+        if end <= start:
+            end = start + duration
+        description = str(scene.get("description") or f"Cảnh {index + 1}").strip()
+        candidates = [item for item in scene.get("source_candidates") or [] if isinstance(item, dict)]
+        sources = []
+        queries = []
+        for value in [scene.get("search_query"), *(item.get("query") for item in candidates)]:
+            if isinstance(value, str) and value.strip() and value.strip() not in queries:
+                queries.append(value.strip())
+        for item in candidates:
+            source = item.get("source")
+            if isinstance(source, str) and source and source not in sources:
+                sources.append(source)
+        hero = index == 0 or (index > 0 and act_index != source_scenes[index - 1][0])
+        scene_id = str(scene.get("id") or f"slot_{index + 1:02d}")
+        texture_keywords = [
+            part.strip()
+            for value in (scene.get("visual_mood"), scene.get("color_grade"))
+            if isinstance(value, str)
+            for part in value.replace("_", " ").split(",")
+            if part.strip()
+        ]
+        scenes.append({
+            "id": scene_id,
+            "type": "broll",
+            "description": description,
+            "start_seconds": start,
+            "end_seconds": end,
+            "movement": str(scene.get("motion") or "static"),
+            "transition_out": str(scene.get("cut_to_next") or "cut"),
+            "overlay_notes": " · ".join(
+                str(value) for value in (scene.get("visual_mood"), scene.get("color_grade")) if value
+            ),
+            "narrative_role": (
+                "establish_context" if index == 0
+                else "resolution" if index == len(source_scenes) - 1
+                else "emotional_beat"
+            ),
+            "information_role": description,
+            "hero_moment": hero,
+            "texture_keywords": texture_keywords,
+            "required_assets": [{
+                "type": "video",
+                "description": description,
+                "source": "source",
+            }],
+        })
+        slots.append({
+            "id": scene_id,
+            "description": description,
+            "hero": hero,
+            "preferred_sources": sources,
+            "queries": queries[:3],
+            "min_duration": min(duration, max(1.0, duration * 0.75)),
+            "target_hold_seconds": end - start,
+            "era_hint": "any",
+        })
+
+    metadata = {
+        "pipeline": "documentary-montage",
+        "shape": artifact.get("shape") or "three-act",
+        "tone": artifact.get("tone"),
+        "thematic_question": _thematic_question(project_dir),
+        "total_duration_seconds": _number(artifact.get("total_duration_seconds"), 0.0),
+        "slots": slots,
+        "end_tag": artifact.get("end_tag"),
+        "music_plan": artifact.get("music_plan"),
+        "asset_acquisition_plan": artifact.get("asset_acquisition_plan"),
+        "timeline_summary": artifact.get("timeline_summary"),
+        "legacy_format": "documentary_acts_v1",
+    }
+    return {
+        "version": "1.0",
+        "scenes": scenes,
+        "metadata": {key: value for key, value in metadata.items() if value is not None},
+    }
+
+
+def _normalize_legacy_artifact(
+    project_dir: Path,
+    name: str,
+    artifact: dict[str, Any],
+) -> dict[str, Any]:
+    if name == "scene_plan" and not isinstance(artifact.get("scenes"), list):
+        return _normalize_legacy_scene_plan(project_dir, artifact)
+    return artifact
+
+
+def _persist_materialized_artifacts(
+    project_dir: Path,
+    references: dict[str, Any],
+    artifacts: dict[str, Any],
+) -> None:
+    root = project_dir.resolve()
+    for name, reference in references.items():
+        if not isinstance(reference, str) or name not in artifacts:
+            continue
+        target = (
+            (project_dir / reference).resolve()
+            if not Path(reference).is_absolute()
+            else Path(reference).resolve()
+        )
+        try:
+            target.relative_to(root)
+        except (ValueError, OSError):
+            continue
+        _write_json(target, artifacts[name])
+
+
+def _build_prompt(
+    project_id: str,
+    project_dir: Path,
+    marker: dict[str, Any],
+    brief: str,
+    review_feedback: str | None = None,
+) -> str:
     pipeline_type = marker.get("pipeline_type") or "unknown"
+    feedback_section = ""
+    if review_feedback:
+        feedback_section = f"""
+## Phản hồi duyệt trong app
+{review_feedback}
+
+Hãy sửa artifact của stage hiện tại theo phản hồi trên, tự kiểm tra lại, rồi ghi một
+checkpoint `awaiting_human` mới để người dùng duyệt lại. Không bỏ qua cổng duyệt.
+"""
     return f"""# MOSA TOOL ALL — bắt đầu production
 
 Bạn là agent điều phối workflow cho MOSA TOOL ALL. Hãy thực hiện production thật,
@@ -130,6 +420,7 @@ không chỉ mô phỏng trạng thái.
 
 ## Brief người dùng
 {brief}
+{feedback_section}
 
 ## Giao thức bắt buộc
 1. Đọc manifest tại `pipeline_defs/{pipeline_type}.yaml` và executive-producer skill tương ứng.
@@ -142,9 +433,13 @@ không chỉ mô phỏng trạng thái.
    ghi stage `awaiting_human` hoặc `failed` với lý do cụ thể, không tạo dữ liệu giả.
 6. Khi kết thúc, để lại artifact và checkpoint hợp lệ trong workspace. Không sửa file ứng dụng,
    không xoá dữ liệu ngoài workspace.
+7. Tiếp tục tự động qua mọi stage không yêu cầu duyệt. Một stage không gated vừa `completed`
+   KHÔNG phải là điểm kết thúc workflow.
+8. Với stage có `human_approval_default: true`, hãy tạo và kiểm tra đầy đủ artifact của stage đó,
+   ghi checkpoint `awaiting_human`, trình bày nội dung cần duyệt, rồi mới dừng.
 
-Bắt đầu từ stage kế tiếp còn thiếu của pipeline và tiếp tục cho đến checkpoint hợp lệ đầu tiên hoặc
-điểm duyệt cần người dùng xác nhận.
+Bắt đầu từ stage kế tiếp còn thiếu của pipeline. Chỉ được dừng khi đã tới checkpoint
+`awaiting_human`, hoàn tất toàn bộ pipeline, hoặc gặp lỗi/blocker thật đã được ghi rõ vào checkpoint.
 """
 
 
@@ -178,19 +473,45 @@ def _command(
         command.append(prompt)
         return command
 
+    if agent == "ollama":
+        prompt_file = project_dir / PROMPT_FILENAME
+        if getattr(sys, "frozen", False):
+            command = [
+                executable,
+                "--ollama-worker",
+                "--project-dir",
+                str(project_dir),
+                "--prompt-file",
+                str(prompt_file),
+            ]
+        else:
+            command = [
+                executable,
+                "-m",
+                "backlot.ollama_agent",
+                "--project-dir",
+                str(project_dir),
+                "--prompt-file",
+                str(prompt_file),
+            ]
+        if model:
+            command.extend(["--model", model])
+        return command
+
     command = [
         executable,
         "--print",
         "--output-format",
         "stream-json",
+        "--verbose",
         "--permission-mode",
         "auto",
+        prompt,
         "--add-dir",
         str(REPO_ROOT),
     ]
     if model:
         command.extend(["--model", model])
-    command.append(prompt)
     return command
 
 
@@ -203,17 +524,51 @@ def _watch_process(project_id: str, project_dir: Path, process: subprocess.Popen
         handle.close()
 
     run = _read_json(_run_path(project_dir)) or {"project_id": project_id}
-    run.update({
-        "status": "completed" if return_code == 0 else "failed",
-        "finished_at": _now(),
-        "exit_code": return_code,
-    })
+    pending_review = run.pop("pending_review_resume", None)
+    if isinstance(pending_review, dict):
+        run.update({
+            "finished_at": _now(),
+            "exit_code": return_code,
+            "status": "idle",
+        })
+        _write_json(_run_path(project_dir), run)
+        _resume_after_review(project_id, pending_review, prior_run=run)
+        return
+
+    run.update({"finished_at": _now(), "exit_code": return_code})
     if return_code != 0:
-        run["error"] = f"Agent kết thúc với mã lỗi {return_code}. Xem agent_run.log để biết chi tiết."
+        run["status"] = "failed"
+        fallback = f"Agent kết thúc với mã lỗi {return_code}. Xem agent_run.log để biết chi tiết."
+        run["error"] = _run_failure_detail(project_dir, fallback)
+        _fail_active_checkpoint(project_dir, run["error"], run)
+    else:
+        marker = _read_json(project_dir / "project.json") or {}
+        pipeline_type = marker.get("pipeline_type")
+        next_stage = get_next_stage(project_dir.parent, project_id, pipeline_type)
+        next_checkpoint = (
+            _read_json(project_dir / f"checkpoint_{next_stage}.json")
+            if next_stage
+            else None
+        )
+        if next_stage is None:
+            run["status"] = "completed"
+            run.pop("error", None)
+        elif next_checkpoint and next_checkpoint.get("status") == "awaiting_human":
+            run["status"] = "awaiting_human"
+            run["awaiting_stage"] = next_stage
+            run.pop("error", None)
+        else:
+            run["status"] = "failed"
+            fallback = (
+                f"Agent đã dừng trước khi hoàn tất stage '{next_stage}' hoặc tạo cổng duyệt. "
+                "Hãy chạy lại workflow để tiếp tục."
+            )
+            run["error"] = _run_failure_detail(project_dir, fallback)
+            _fail_active_checkpoint(project_dir, run["error"], run)
     _write_json(_run_path(project_dir), run)
     emit_event(project_dir, {
         "tool": f"agent:{run.get('agent', 'unknown')}",
-        "event": "finish" if return_code == 0 else "error",
+        "event": "finish" if run["status"] in {"completed", "awaiting_human"} else "error",
         "status": run["status"],
         "exit_code": return_code,
     })
@@ -226,6 +581,7 @@ def start_run(
     agent: str | None = None,
     model: str | None = None,
     allow_automation: bool = False,
+    review_feedback: str | None = None,
 ) -> dict[str, Any]:
     project_dir = state_mod.PROJECTS_DIR / project_id
     if not project_dir.is_dir():
@@ -236,8 +592,11 @@ def start_run(
         raise ValueError("Model phải là văn bản")
     if not isinstance(allow_automation, bool):
         raise ValueError("allow_automation phải là boolean")
+    if review_feedback is not None and not isinstance(review_feedback, str):
+        raise ValueError("Phản hồi duyệt phải là văn bản")
     brief = brief.strip()
     model = model.strip() if isinstance(model, str) else None
+    review_feedback = review_feedback.strip() if isinstance(review_feedback, str) else None
     if not brief:
         raise ValueError("Hãy mô tả video cần sản xuất trước khi bắt đầu")
     if len(brief) > MAX_BRIEF_LENGTH:
@@ -249,9 +608,23 @@ def start_run(
 
     marker = _load_marker(project_dir)
     resolved_agent, executable = _resolve_agent(agent)
-    prompt = _build_prompt(project_id, project_dir, marker, brief)
-    command = _command(resolved_agent, executable, project_dir, model, allow_automation, prompt)
+    next_stage = get_next_stage(
+        state_mod.PROJECTS_DIR,
+        project_id,
+        marker.get("pipeline_type"),
+    )
+    if next_stage is None:
+        raise ValueError("Workflow đã hoàn tất toàn bộ pipeline")
+    current_checkpoint = _read_json(project_dir / f"checkpoint_{next_stage}.json")
+    if current_checkpoint and current_checkpoint.get("status") == "awaiting_human":
+        raise ValueError(f"Stage '{next_stage}' đang chờ bạn duyệt trên board")
+    if resolved_agent == "ollama":
+        blocker = _ollama_stage_blocker(marker.get("pipeline_type"), next_stage)
+        if blocker:
+            raise ValueError(blocker)
+    prompt = _build_prompt(project_id, project_dir, marker, brief, review_feedback)
     (project_dir / PROMPT_FILENAME).write_text(prompt, encoding="utf-8")
+    command = _command(resolved_agent, executable, project_dir, model, allow_automation, prompt)
     marker["brief"] = brief
     _write_json(project_dir / "project.json", marker)
 
@@ -265,19 +638,24 @@ def start_run(
         "log_file": LOG_FILENAME,
         "started_at": _now(),
     }
+    if review_feedback:
+        run["review_feedback"] = review_feedback
     _write_json(_run_path(project_dir), run)
     emit_event(project_dir, {"tool": f"agent:{resolved_agent}", "event": "start", "status": "starting"})
 
-    first_stage = get_pipeline_stages(marker.get("pipeline_type"))[0]
     try:
         write_checkpoint(
             state_mod.PROJECTS_DIR,
             project_id,
-            first_stage,
+            next_stage,
             "in_progress",
             {},
             pipeline_type=marker.get("pipeline_type"),
-            metadata={"runner": resolved_agent, "run_started_at": run["started_at"]},
+            metadata={
+                "runner": resolved_agent,
+                "run_started_at": run["started_at"],
+                **({"review_feedback": review_feedback} if review_feedback else {}),
+            },
         )
     except Exception as exc:
         run["status"] = "failed"
@@ -292,7 +670,7 @@ def start_run(
         part for part in (str(REPO_ROOT), env.get("PYTHONPATH", "")) if part
     )
     try:
-        log_handle = open(project_dir / LOG_FILENAME, "a", encoding="utf-8")
+        log_handle = open(project_dir / LOG_FILENAME, "w", encoding="utf-8")
         kwargs: dict[str, Any] = {
             "cwd": str(project_dir),
             "env": env,
@@ -316,7 +694,7 @@ def start_run(
             write_checkpoint(
                 state_mod.PROJECTS_DIR,
                 project_id,
-                first_stage,
+                next_stage,
                 "failed",
                 {},
                 pipeline_type=marker.get("pipeline_type"),
@@ -338,3 +716,168 @@ def start_run(
         daemon=True,
     ).start()
     return run
+
+
+def _resume_after_review(
+    project_id: str,
+    request: dict[str, Any],
+    *,
+    prior_run: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    project_dir = state_mod.PROJECTS_DIR / project_id
+    marker = _load_marker(project_dir)
+    next_stage = get_next_stage(
+        state_mod.PROJECTS_DIR,
+        project_id,
+        marker.get("pipeline_type"),
+    )
+    if next_stage is None:
+        completed = {
+            **(prior_run or {}),
+            "project_id": project_id,
+            "status": "completed",
+            "finished_at": _now(),
+        }
+        completed.pop("error", None)
+        completed.pop("pending_review_resume", None)
+        _write_json(_run_path(project_dir), completed)
+        return {"resumed": False, "completed": True, "run": completed}
+
+    try:
+        resumed = start_run(
+            project_id,
+            brief=str(request.get("brief") or marker.get("brief") or "").strip(),
+            agent=request.get("agent"),
+            model=request.get("model"),
+            allow_automation=True,
+            review_feedback=request.get("review_feedback"),
+        )
+    except ValueError as exc:
+        failed = {
+            **(prior_run or {}),
+            "project_id": project_id,
+            "status": "failed",
+            "finished_at": _now(),
+            "error": f"Đã lưu quyết định duyệt nhưng chưa thể tiếp tục tự động: {exc}",
+        }
+        failed.pop("pending_review_resume", None)
+        _write_json(_run_path(project_dir), failed)
+        emit_event(project_dir, {
+            "tool": "human:review",
+            "event": "resume_error",
+            "status": "failed",
+            "error": failed["error"],
+        })
+        return {"resumed": False, "completed": False, "run": failed, "error": failed["error"]}
+    return {"resumed": True, "completed": False, "run": resumed}
+
+
+def review_gate(
+    project_id: str,
+    *,
+    stage: str,
+    action: str,
+    note: str = "",
+) -> dict[str, Any]:
+    project_dir = state_mod.PROJECTS_DIR / project_id
+    if not project_dir.is_dir():
+        raise ValueError("Không tìm thấy workspace của dự án")
+    if action not in {"approve", "revise"}:
+        raise ValueError("Hành động duyệt không hợp lệ")
+    if not isinstance(stage, str) or not stage.strip():
+        raise ValueError("Thiếu stage cần duyệt")
+    if not isinstance(note, str):
+        raise ValueError("Ghi chú duyệt phải là văn bản")
+    stage = stage.strip()
+    note = note.strip()
+    if len(note) > MAX_REVIEW_NOTE_LENGTH:
+        raise ValueError(f"Ghi chú quá dài, tối đa {MAX_REVIEW_NOTE_LENGTH} ký tự")
+    if action == "revise" and not note:
+        raise ValueError("Hãy nhập nội dung cần chỉnh sửa")
+
+    marker = _load_marker(project_dir)
+    checkpoint = _read_json(project_dir / f"checkpoint_{stage}.json")
+    if not checkpoint or checkpoint.get("status") != "awaiting_human":
+        raise ValueError(f"Stage '{stage}' hiện không chờ duyệt")
+
+    reviewed_at = _now()
+    metadata = {
+        **(checkpoint.get("metadata") or {}),
+        "reviewed_via": "backlot_app",
+        "reviewed_at": reviewed_at,
+        "review_action": action,
+    }
+    if note:
+        metadata["review_note"] = note
+
+    approved = action == "approve"
+    artifact_references = checkpoint.get("artifacts") or {}
+    artifacts = _materialize_checkpoint_artifacts(
+        project_dir,
+        artifact_references,
+    )
+    if approved and stage == "assets":
+        from backlot.asset_materializer import asset_file_report
+
+        report = asset_file_report(project_dir, artifacts.get("asset_manifest"))
+        if not report["complete"]:
+            missing = ", ".join(entry["id"] or entry["path"] for entry in report["missing_entries"][:5])
+            suffix = "…" if report["missing"] > 5 else ""
+            raise ValueError(
+                f"Chưa thể duyệt tài nguyên: còn thiếu {report['missing']}/{report['total']} file "
+                f"({missing}{suffix}). Hãy bấm 'Tải tài nguyên 0 USD' và chờ kiểm tra hoàn tất."
+            )
+    write_checkpoint(
+        state_mod.PROJECTS_DIR,
+        project_id,
+        stage,
+        "completed" if approved else "failed",
+        artifacts,
+        pipeline_type=marker.get("pipeline_type"),
+        style_playbook=checkpoint.get("style_playbook") or marker.get("style_playbook"),
+        checkpoint_policy=checkpoint.get("checkpoint_policy") or "guided",
+        human_approval_required=True,
+        human_approved=approved,
+        review=checkpoint.get("review"),
+        cost_snapshot=checkpoint.get("cost_snapshot"),
+        error=None if approved else f"Người dùng yêu cầu chỉnh sửa: {note}",
+        metadata=metadata,
+    )
+    _persist_materialized_artifacts(project_dir, artifact_references, artifacts)
+    emit_event(project_dir, {
+        "tool": "human:review",
+        "event": action,
+        "status": "approved" if approved else "revision_requested",
+        "stage": stage,
+    })
+
+    current_run = get_run(project_id)
+    resume_request = {
+        "brief": current_run.get("brief") or marker.get("brief") or "",
+        "agent": current_run.get("agent") or "auto",
+        "model": current_run.get("model"),
+        "review_feedback": (
+            f"Stage `{stage}` chưa được duyệt. Yêu cầu chỉnh sửa của người dùng: {note}"
+            if not approved
+            else None
+        ),
+    }
+    if current_run.get("status") in {"starting", "running"}:
+        queued_run = {**current_run, "pending_review_resume": resume_request}
+        _write_json(_run_path(project_dir), queued_run)
+        return {
+            "ok": True,
+            "action": action,
+            "stage": stage,
+            "queued": True,
+            "resumed": False,
+        }
+
+    result = _resume_after_review(project_id, resume_request, prior_run=current_run)
+    return {
+        "ok": True,
+        "action": action,
+        "stage": stage,
+        "queued": False,
+        **result,
+    }

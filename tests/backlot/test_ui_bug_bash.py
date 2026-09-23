@@ -228,6 +228,23 @@ def test_static_navigation_invalid_route_and_active_takes(staged_backlot_server)
             browser.close()
 
 
+def test_missing_project_keeps_all_recovery_navigation(staged_backlot_server):
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        try:
+            page.goto(staged_backlot_server + "/p/project-that-does-not-exist?static=1", wait_until="networkidle")
+            assert page.get_by_role("heading", name="Không tìm thấy dự án").is_visible()
+            assert page.get_by_role("button", name="QUAY LẠI").is_visible()
+            assert page.locator('.recovery-slate a[href="/"]').is_visible()
+            assert page.locator('.recovery-slate a[href="/#new-project"]').is_visible()
+            assert page.locator('.recovery-slate a[href="/#workflows"]').is_visible()
+            assert page.locator('.recovery-slate a[href="/settings"]').is_visible()
+            assert "Error: 404" not in page.locator("body").inner_text()
+        finally:
+            browser.close()
+
+
 @pytest.mark.parametrize(
     ("project_id", "_pipeline_type", "stage", "artifact_name", "visible_text"),
     APPROVAL_CASES,

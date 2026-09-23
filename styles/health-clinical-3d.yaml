@@ -1,0 +1,81 @@
+identity:
+  name: "Health Clinical 3D"
+  category: motion-graphics
+  mood: precise, modern, scientific, calm
+  pace: deliberate
+  best_for: "Mechanism-first health explainers with anatomy, molecules, clinical diagrams, and restrained 3D imagery"
+
+visual_language:
+  color_palette:
+    primary: ["#123B57", "#1F6E8C"]
+    accent: ["#2BB8A3", "#F2B84B"]
+    background: "#EFF7F8"
+    text: "#102A3A"
+    muted: "#647985"
+  composition: "clean clinical panels, translucent layers, centered anatomy or molecule hero, precise data rails and modular diagram zones"
+  texture: "frosted glass, soft volumetric gradients, subtle depth-of-field, no sterile hospital horror"
+
+typography:
+  headings:
+    font: "Inter"
+    weight: 800
+    tracking: "-0.035em"
+  body:
+    font: "Inter"
+    weight: 500
+    line_height: 1.42
+  stat_card:
+    font: "Inter"
+    weight: 800
+    size_multiplier: 2.8
+  scale_system: "major_third"
+  weight_matrix:
+    title: 850
+    heading: 750
+    body: 500
+    caption: 600
+
+motion:
+  transitions: [iris, zoom-through, light-sweep, fade]
+  animation_style: "precise camera pushes, layered anatomy reveals, controlled iris transitions, progressive mechanism paths"
+  pacing_rules:
+    min_scene_hold_seconds: 3.5
+    max_scene_hold_seconds: 10
+    text_card_hold_seconds: 4
+    stat_card_hold_seconds: 4
+    transition_duration_seconds: 0.6
+  entrance: "controlled depth reveal with gentle scale and opacity"
+  exit: "iris or short fade; never use aggressive medical shock effects"
+
+audio:
+  voice_style: "clear, measured, academically confident without sounding diagnostic"
+  music_mood: "minimal science documentary ambience with soft pulse and glassy accents"
+  music_volume: 0.055
+  sfx_style: "quiet interface ticks, soft air movement, subtle tonal rises"
+  ducking_threshold_db: -5
+
+asset_generation:
+  image_prompt_prefix: "scientifically plausible clinical 3D health visualization, translucent anatomical layers, clean cyan and teal lighting, pale background, premium medical documentary style, no text, "
+  image_negative_prompt: "embedded text, labels, watermark, logo, blood, gore, surgery, hospital fear, deformed anatomy, exaggerated disease, miracle cure, clutter"
+  diagram_style: "teal mechanism paths, cyan anatomy layers, amber caution states, labels and citations rendered outside generated imagery"
+  consistency_anchors:
+    - "Pale clinical background with navy text and teal mechanisms"
+    - "Anatomy remains simplified, accurate, and non-graphic"
+    - "Use iris or zoom-through only for major mechanism changes"
+    - "All evidence levels and citations are deterministic overlays"
+
+quality_rules:
+  - "Generated anatomy must be reviewed for plausibility before final render"
+  - "Every medical claim has a source_ref and evidence level"
+  - "Do not imply diagnosis or guaranteed treatment response"
+  - "Use a maximum of three transition families"
+  - "Citation and disclaimer text remains readable for at least 3 seconds"
+  - "Minimum text contrast ratio 4.5:1"
+
+chart_palette: ["#123B57", "#1F6E8C", "#2BB8A3", "#F2B84B", "#7B8FA1"]
+
+color_rules:
+  harmony_type: analogous
+  contrast_validation: true
+  colorblind_safe: true
+

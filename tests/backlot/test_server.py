@@ -101,6 +101,77 @@ class TestBacklotServerApi:
         assert payload["build"]
         assert payload["label"].startswith("v")
 
+    def test_app_update_routes(self, client, monkeypatch):
+        monkeypatch.setattr(
+            server_mod,
+            "update_status",
+            lambda force=False: {"update_available": force, "job": {"status": "idle"}},
+        )
+        monkeypatch.setattr(
+            server_mod,
+            "start_update",
+            lambda: {"update_available": True, "job": {"status": "queued"}},
+        )
+        checked = client.get("/api/app-update?force=true")
+        started = client.post("/api/app-update/install")
+        assert checked.status_code == 200
+        assert checked.json()["update_available"] is True
+        assert started.status_code == 202
+        assert started.json()["job"]["status"] == "queued"
+
+    def test_project_review_route_delegates_gate_action(
+        self, client, projects_root, monkeypatch
+    ):
+        _make_project(projects_root, "review-route")
+        captured = {}
+
+        def fake_review_gate(project_id, **kwargs):
+            captured.update({"project_id": project_id, **kwargs})
+            return {"ok": True, "resumed": True, "stage": kwargs["stage"]}
+
+        monkeypatch.setattr(server_mod, "review_gate", fake_review_gate)
+
+        response = client.post(
+            "/api/project/review-route/review",
+            json={
+                "stage": "script",
+                "action": "revise",
+                "note": "Rút ngắn phần mở đầu.",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["resumed"] is True
+        assert captured == {
+            "project_id": "review-route",
+            "stage": "script",
+            "action": "revise",
+            "note": "Rút ngắn phần mở đầu.",
+        }
+
+    def test_asset_materialization_routes_expose_status_and_start(
+        self, client, projects_root, monkeypatch
+    ):
+        _make_project(projects_root, "asset-route")
+        monkeypatch.setattr(
+            server_mod,
+            "materialization_status",
+            lambda project_id: {"project_id": project_id, "missing": 2, "job": {"status": "idle"}},
+        )
+        monkeypatch.setattr(
+            server_mod,
+            "start_materialization",
+            lambda project_id: {"project_id": project_id, "missing": 2, "job": {"status": "queued"}},
+        )
+
+        status = client.get("/api/project/asset-route/assets/materialization")
+        started = client.post("/api/project/asset-route/assets/materialization", json={})
+
+        assert status.status_code == 200
+        assert status.json()["job"]["status"] == "idle"
+        assert started.status_code == 202
+        assert started.json()["job"]["status"] == "queued"
+
     def test_provider_settings_are_masked_and_persisted_locally(self, client, tmp_path, monkeypatch):
         env_path = tmp_path / ".env"
         monkeypatch.setattr(settings_mod, "ENV_PATH", env_path)
@@ -249,8 +320,14 @@ class TestBacklotServerApi:
         names = {workflow["name"] for workflow in workflows}
         assert "cinematic" in names
         assert "documentary-montage" in names
+        assert "health-infographic" in names
         assert all(workflow["stages"] for workflow in workflows if workflow["name"] != "framework-smoke")
         assert all("description" in workflow for workflow in workflows)
+        health = next(workflow for workflow in workflows if workflow["name"] == "health-infographic")
+        assert health["project_intake"]["style_playbook"] == "health-editorial-pro"
+        assert health["project_intake"]["style_playbook_field"] == "visual_style"
+        intake_fields = {field["name"] for field in health["project_intake"]["fields"]}
+        assert {"visual_style", "motion_intensity", "aspect_ratio"} <= intake_fields
 
     def test_create_project_initializes_workspace_and_rejects_duplicates(self, client, projects_root):
         created = client.post(
@@ -279,6 +356,99 @@ class TestBacklotServerApi:
             },
         )
         assert duplicate.status_code == 409
+
+    def test_create_health_project_builds_ready_to_run_brief(self, client, projects_root):
+        created = client.post(
+            "/api/projects",
+            json={
+                "project_id": "ginger-science",
+                "title": "Gừng sống và gừng nấu",
+                "pipeline_type": "health-infographic",
+                "intake": {
+                    "topic": "Gừng sống và gừng nấu chín khác nhau thế nào?",
+                    "audience": "Người trưởng thành quan tâm sức khỏe",
+                    "duration_minutes": "8",
+                    "language": "Tiếng Việt",
+                    "angle": "So sánh cơ chế và bằng chứng trên người",
+                    "reference_url": "https://www.youtube.com/watch?v=XWQwzV-BplU",
+                },
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["brief_ready"] is True
+        marker = json.loads(
+            (projects_root / "ginger-science" / "project.json").read_text(encoding="utf-8")
+        )
+        assert created.json()["style_playbook"] == "health-editorial-pro"
+        assert marker["style_playbook"] == "health-editorial-pro"
+        assert marker["intake"]["duration_minutes"] == "8"
+        assert marker["intake"]["motion_intensity"] == "balanced"
+        assert marker["intake"]["aspect_ratio"] == "16:9"
+        assert "Gừng sống và gừng nấu chín" in marker["brief"]
+        assert "không thay thế tư vấn y tế" in marker["brief"]
+
+        state = client.get("/api/project/ginger-science/state")
+        assert state.status_code == 200
+        assert state.json()["brief"] == marker["brief"]
+        assert state.json()["intake"]["topic"] == marker["intake"]["topic"]
+
+    def test_create_health_project_uses_selected_visual_style(self, client, projects_root):
+        created = client.post(
+            "/api/projects",
+            json={
+                "project_id": "food-documentary",
+                "title": "Food Documentary",
+                "pipeline_type": "health-infographic",
+                "intake": {
+                    "topic": "Cách chế biến thay đổi hợp chất trong thực phẩm",
+                    "audience": "Người trưởng thành",
+                    "duration_minutes": "5",
+                    "language": "Tiếng Việt",
+                    "angle": "So sánh bằng chứng",
+                    "visual_style": "health-food-documentary",
+                    "motion_intensity": "subtle",
+                    "aspect_ratio": "9:16",
+                    "reference_url": "",
+                },
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["style_playbook"] == "health-food-documentary"
+        marker = json.loads(
+            (projects_root / "food-documentary" / "project.json").read_text(encoding="utf-8")
+        )
+        assert marker["style_playbook"] == "health-food-documentary"
+        assert "Cường độ chuyển động: subtle" in marker["brief"]
+        assert "Tỷ lệ khung hình: 9:16" in marker["brief"]
+
+    def test_create_health_project_requires_topic_and_valid_reference_url(self, client):
+        missing_topic = client.post(
+            "/api/projects",
+            json={
+                "project_id": "health-missing-topic",
+                "title": "Health",
+                "pipeline_type": "health-infographic",
+                "intake": {},
+            },
+        )
+        assert missing_topic.status_code == 400
+
+        bad_url = client.post(
+            "/api/projects",
+            json={
+                "project_id": "health-bad-url",
+                "title": "Health",
+                "pipeline_type": "health-infographic",
+                "intake": {
+                    "topic": "Một chủ đề",
+                    "audience": "Người lớn",
+                    "duration_minutes": "8",
+                    "language": "Tiếng Việt",
+                    "reference_url": "file:///tmp/private.mp4",
+                },
+            },
+        )
+        assert bad_url.status_code == 400
 
     @pytest.mark.parametrize(
         "payload",

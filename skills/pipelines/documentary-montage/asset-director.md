@@ -47,6 +47,13 @@ The two approaches are not mutually exclusive.
 The output is an `asset_manifest` mapping every slot to exactly one
 clip with full provenance.
 
+The manifest is not proof that an asset exists. Before writing an
+`awaiting_human` checkpoint, verify every `assets[].path` is a real,
+non-empty file inside the project workspace. A landing-page URL or an
+expected future path does not count as a completed asset. If a provider
+cannot download, use another configured free provider or leave the stage
+in progress with a precise error; never claim a slot is filled by URL only.
+
 ## Prerequisites
 
 | Layer | Resource | Purpose |

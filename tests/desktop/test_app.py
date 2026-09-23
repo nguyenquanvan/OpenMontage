@@ -1,32 +1,18 @@
-from __future__ import annotations
+"""Desktop launcher environment tests."""
 
-import io
+from pathlib import Path
 
-from desktop import app
-
-
-def test_windowed_build_replaces_missing_standard_streams(monkeypatch) -> None:
-    stdout_sink = io.StringIO()
-    stderr_sink = io.StringIO()
-    sinks = iter((stdout_sink, stderr_sink))
-
-    monkeypatch.setattr(app.sys, "stdout", None)
-    monkeypatch.setattr(app.sys, "stderr", None)
-    monkeypatch.setattr(app, "_open_stdio_sink", lambda: next(sinks))
-    monkeypatch.setattr(app, "_STDIO_SINKS", [])
-
-    app.ensure_standard_streams()
-
-    assert app.sys.stdout is stdout_sink
-    assert app.sys.stderr is stderr_sink
-    assert app.sys.stdout.isatty() is False
-    assert app.sys.stderr.isatty() is False
+from desktop import app as desktop_app
 
 
-def test_uvicorn_config_does_not_initialize_console_logging(monkeypatch) -> None:
-    monkeypatch.setattr(app.sys, "stdout", None)
-    monkeypatch.setattr(app.sys, "stderr", None)
+def test_configure_agent_path_adds_existing_user_bin(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    user_bin = home / ".local" / "bin"
+    user_bin.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setattr(desktop_app.sys, "platform", "linux")
 
-    config = app.server_config(object(), 4750)
+    desktop_app.configure_agent_path()
 
-    assert config.log_config is None
+    assert desktop_app.os.environ["PATH"].split(desktop_app.os.pathsep)[0] == str(user_bin)

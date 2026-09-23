@@ -29,7 +29,10 @@ def _load_dotenv() -> None:
     even when tools are imported directly without going through the registry.
     Only sets variables that are not already in the environment.
     """
-    env_path = Path(__file__).resolve().parent.parent / ".env"
+    env_path = Path(
+        os.environ.get("OPENMONTAGE_ENV_PATH")
+        or (Path(__file__).resolve().parent.parent / ".env")
+    )
     if not env_path.is_file():
         return
     import re

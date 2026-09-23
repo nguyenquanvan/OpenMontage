@@ -1333,10 +1333,24 @@ class VideoCompose(BaseTool):
 
             # Derive caption colors from the palette
             theme["captionHighlightColor"] = primary
-            # Caption background: semi-transparent version of the bg color
+            # Caption bar follows the text polarity, not a small allow-list of
+            # background hex values. Cream and tinted light playbooks still
+            # need a light bar behind their dark caption text.
+            text_hex = str(text).lstrip("#")
+            text_is_light = False
+            if len(text_hex) in {3, 6}:
+                if len(text_hex) == 3:
+                    text_hex = "".join(character * 2 for character in text_hex)
+                try:
+                    red = int(text_hex[0:2], 16)
+                    green = int(text_hex[2:4], 16)
+                    blue = int(text_hex[4:6], 16)
+                    text_is_light = (red * 299 + green * 587 + blue * 114) / 1000 >= 160
+                except ValueError:
+                    text_is_light = False
             theme["captionBackgroundColor"] = (
-                f"rgba(255, 255, 255, 0.85)" if bg.upper() in ("#FFFFFF", "#FAFAFA", "#F9FAFB")
-                else f"rgba(15, 23, 42, 0.75)"
+                "rgba(15, 23, 42, 0.75)" if text_is_light
+                else "rgba(255, 255, 255, 0.85)"
             )
 
             # Motion style from playbook. `pace` is an identity field in the

@@ -1,0 +1,81 @@
+identity:
+  name: "Health Food Documentary"
+  category: cinematic
+  mood: natural, tactile, human, trustworthy
+  pace: moderate
+  best_for: "Food, ingredient, nutrition, and habit explainers combining documentary imagery with clear evidence graphics"
+
+visual_language:
+  color_palette:
+    primary: ["#35533A", "#6D4C3D"]
+    accent: ["#D97841", "#D8A742"]
+    background: "#F3E8D4"
+    text: "#26342A"
+    muted: "#746B5F"
+  composition: "tactile food photography, close-up ingredient heroes, warm documentary frames, inset evidence cards and handwritten-map rhythm without fake handwriting"
+  texture: "natural linen, wood, ceramic, window light, fine film grain and shallow depth-of-field"
+
+typography:
+  headings:
+    font: "Inter"
+    weight: 800
+    tracking: "-0.035em"
+  body:
+    font: "Inter"
+    weight: 500
+    line_height: 1.48
+  stat_card:
+    font: "Inter"
+    weight: 800
+    size_multiplier: 2.7
+  scale_system: "major_third"
+  weight_matrix:
+    title: 850
+    heading: 750
+    body: 500
+    caption: 600
+
+motion:
+  transitions: [slide-left, wipe-left, light-sweep, fade]
+  animation_style: "slow parallax ingredient photography, tactile editorial cards, gentle timeline builds, selective hero sweeps"
+  pacing_rules:
+    min_scene_hold_seconds: 3.5
+    max_scene_hold_seconds: 10
+    text_card_hold_seconds: 4.5
+    stat_card_hold_seconds: 4
+    transition_duration_seconds: 0.55
+  entrance: "soft lateral reveal with shallow parallax"
+  exit: "editorial wipe or natural crossfade"
+
+audio:
+  voice_style: "warm documentary narration, curious and practical, never promotional or prescriptive"
+  music_mood: "organic acoustic documentary bed with light percussion and warm plucked textures"
+  music_volume: 0.065
+  sfx_style: "subtle kitchen texture, paper movement, soft whooshes and natural room tone"
+  ducking_threshold_db: -4
+
+asset_generation:
+  image_prompt_prefix: "premium natural-light food documentary photography, tactile ingredient close-up, warm linen and ceramic textures, earthy green and terracotta palette, shallow depth of field, no text, "
+  image_negative_prompt: "embedded text, labels, watermark, logo, artificial plastic food, oversaturated advertising, medical gore, miracle cure, clutter"
+  diagram_style: "earthy green mechanism paths, terracotta active states, warm cream evidence cards, citations rendered in the composition engine"
+  consistency_anchors:
+    - "Warm cream base with earthy green and terracotta accents"
+    - "Ingredient spotlight scenes use tactile close-ups and slow parallax"
+    - "Evidence graphics remain precise and never resemble food advertising claims"
+    - "Generated visuals contain no typography, logos, or packaging copy"
+
+quality_rules:
+  - "Distinguish culinary tradition from clinical evidence"
+  - "Every health or nutrition claim has a source_ref"
+  - "Avoid miracle-food framing and guaranteed outcome language"
+  - "Use a 20 percent strong, 60 percent medium, 20 percent rest motion rhythm"
+  - "Keep citations readable for at least 3 seconds"
+  - "Minimum text contrast ratio 4.5:1"
+
+chart_palette: ["#35533A", "#D97841", "#D8A742", "#6D4C3D", "#72866B"]
+
+color_rules:
+  harmony_type: analogous
+  contrast_validation: true
+  colorblind_safe: true
+

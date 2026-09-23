@@ -7,6 +7,7 @@ const newProjectForm = document.getElementById("new-project-form");
 const projectTitleInput = document.getElementById("project-title");
 const projectIdInput = document.getElementById("project-id");
 const projectPipelineInput = document.getElementById("project-pipeline");
+const projectIntake = document.getElementById("project-intake");
 const newProjectStatus = document.getElementById("new-project-status");
 const THEME_KEY = "backlot.theme";
 let currentTheme = localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
@@ -49,6 +50,7 @@ const CATEGORY_LABELS = {
   animation: "Hoạt hình",
   cinematic: "Điện ảnh",
   documentary: "Tài liệu",
+  health: "Sức khỏe",
   custom: "Chuyên biệt",
   podcast: "Podcast",
 };
@@ -96,7 +98,7 @@ function workflowCard(workflow) {
     `${workflow.stages.length} stage`,
     workflow.budget_default_usd != null ? `từ ${trMoney(workflow.budget_default_usd)}` : null,
     workflow.max_wall_time_minutes ? `~${workflow.max_wall_time_minutes} phút` : null,
-    workflow.reference_input ? "nhận footage nguồn" : null,
+    workflow.reference_input ? "nhận video tham khảo" : null,
   ].filter(Boolean);
   return el("details", { class: "workflow-card" },
     el("summary", {},
@@ -109,9 +111,76 @@ function workflowCard(workflow) {
       el("p", { class: "workflow-description" }, workflow.description),
       el("div", { class: "workflow-meta" }, ...meta.map((item) => el("span", {}, item))),
       el("div", { class: "workflow-stages" }, ...stageNodes),
-      el("p", { class: "workflow-hint" }, "Gọi agent với tên luồng này để bắt đầu; Backlot sẽ hiển thị tiến độ khi project được tạo."),
+      el("div", { class: "workflow-actions" },
+        el("p", { class: "workflow-hint" }, "Chọn luồng này, điền brief và mở board để agent chạy theo checkpoint."),
+        el("button", {
+          class: "workflow-use-button",
+          type: "button",
+          onclick: () => selectWorkflow(workflow.name),
+        }, "DÙNG LUỒNG NÀY"),
+      ),
     ),
   );
+}
+
+function currentWorkflow() {
+  return workflows.find((workflow) => workflow.name === projectPipelineInput.value) || null;
+}
+
+function intakeControl(field) {
+  const common = {
+    name: field.name,
+    required: field.required ? "required" : null,
+    placeholder: field.placeholder || null,
+  };
+  if (field.type === "select") {
+    return el("select", common, ...(field.options || []).map((option) => el("option", {
+      value: option.value,
+      selected: String(option.value) === String(field.default ?? "") ? "selected" : null,
+    }, option.label)));
+  }
+  if (field.type === "textarea") {
+    return el("textarea", { ...common, rows: "3" }, field.default ?? "");
+  }
+  return el("input", {
+    ...common,
+    type: field.type === "number" ? "number" : field.type === "url" ? "url" : "text",
+    value: field.default ?? "",
+    min: field.min ?? null,
+    max: field.max ?? null,
+  });
+}
+
+function renderProjectIntake() {
+  const workflow = currentWorkflow();
+  const config = workflow?.project_intake;
+  if (!config) {
+    projectIntake.hidden = true;
+    projectIntake.replaceChildren();
+    newProjectForm.querySelector(".create-project-button").textContent = "KHỞI TẠO & MỞ BOARD";
+    return;
+  }
+  const fields = (config.fields || []).map((field) => el("label", { class: field.type === "textarea" ? "wide" : "" },
+    el("span", {}, field.label),
+    intakeControl(field),
+    field.help ? el("small", {}, field.help) : null,
+  ));
+  projectIntake.replaceChildren(
+    el("div", { class: "project-intake-head" },
+      el("strong", {}, config.title || trPipeline(workflow.name)),
+      config.description ? el("p", {}, config.description) : null,
+    ),
+    el("div", { class: "project-intake-fields" }, ...fields),
+  );
+  projectIntake.hidden = false;
+  newProjectForm.querySelector(".create-project-button").textContent = config.submit_label || "KHỞI TẠO & MỞ BOARD";
+}
+
+function selectWorkflow(name) {
+  projectPipelineInput.value = name;
+  renderProjectIntake();
+  document.getElementById("new-project").scrollIntoView({ behavior: "smooth", block: "start" });
+  projectTitleInput.focus({ preventScroll: true });
 }
 
 function trMoney(value) {
@@ -141,8 +210,11 @@ async function renderWorkflows() {
     el("option", { value: "" }, "Chọn luồng sản xuất…"),
     ...workflows.map((workflow) => el("option", { value: workflow.name }, trPipeline(workflow.name))),
   );
+  renderProjectIntake();
   renderWorkflowMenu();
 }
+
+projectPipelineInput.addEventListener("change", renderProjectIntake);
 
 projectTitleInput.addEventListener("input", () => {
   if (!projectIdEdited) projectIdInput.value = slugify(projectTitleInput.value);
@@ -161,6 +233,12 @@ newProjectForm.addEventListener("submit", async (event) => {
     project_id: projectIdInput.value.trim(),
     pipeline_type: projectPipelineInput.value,
   };
+  const workflow = currentWorkflow();
+  if (workflow?.project_intake) {
+    payload.intake = Object.fromEntries(
+      [...projectIntake.querySelectorAll("input, textarea, select")].map((control) => [control.name, control.value.trim()]),
+    );
+  }
   if (!payload.title || !payload.project_id || !payload.pipeline_type) {
     setNewProjectStatus("Hãy điền tên, mã và chọn luồng sản xuất.", "error");
     return;
@@ -229,10 +307,16 @@ function card(p) {
 async function render() {
   const projects = await getJSON("/api/projects");
   document.getElementById("count").textContent = `${projects.length} dự án`;
-  const liveCount = projects.filter((p) => p.live).length;
+  const liveCount = projects.filter((p) => p.live && !p.awaiting_human).length;
+  const awaitingCount = projects.filter((p) => p.awaiting_human).length;
   const badge = document.getElementById("liveBadge");
-  badge.classList.toggle("idle", liveCount === 0);
-  document.getElementById("liveText").textContent = liveCount ? `${liveCount} ĐANG CHẠY` : "ĐANG CHỜ";
+  badge.classList.toggle("idle", liveCount === 0 && awaitingCount === 0);
+  badge.classList.toggle("awaiting", liveCount === 0 && awaitingCount > 0);
+  document.getElementById("liveText").textContent = liveCount
+    ? `${liveCount} ĐANG CHẠY`
+    : awaitingCount
+      ? `${awaitingCount} CHỜ DUYỆT`
+      : "ĐANG CHỜ";
   grid.innerHTML = "";
   document.getElementById("empty").style.display = projects.length ? "none" : "block";
   for (const p of projects) grid.append(card(p));

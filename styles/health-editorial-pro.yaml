@@ -1,0 +1,99 @@
+identity:
+  name: "Health Editorial Pro"
+  category: motion-graphics
+  mood: premium, warm, trustworthy, evidence-led
+  pace: moderate
+  best_for: "Polished long-form health explainers using editorial photography, evidence graphics, and professional motion"
+
+visual_language:
+  color_palette:
+    primary: ["#17324D", "#294861"]
+    accent: ["#D79A2B", "#708B55"]
+    background: "#F4EEDC"
+    text: "#142433"
+    muted: "#6F746E"
+  composition: "premium magazine grid, asymmetric hero layouts, large editorial type, generous cream whitespace, layered cards and depth"
+  texture: "subtle paper grain, soft photographic shadows, crisp vector lines, restrained light sweeps"
+
+typography:
+  headings:
+    font: "Inter"
+    weight: 800
+    tracking: "-0.04em"
+  body:
+    font: "Inter"
+    weight: 500
+    line_height: 1.45
+  stat_card:
+    font: "Inter"
+    weight: 800
+    size_multiplier: 3.0
+  scale_system: "perfect_fourth"
+  weight_matrix:
+    title: 900
+    heading: 800
+    body: 500
+    caption: 600
+
+motion:
+  transitions: [light-sweep, wipe-left, zoom-through, slide-left, fade]
+  animation_style: "layered editorial reveals, staggered mechanism builds, evidence bars, parallax photography, and hero light sweeps"
+  pacing_rules:
+    min_scene_hold_seconds: 3
+    max_scene_hold_seconds: 9
+    text_card_hold_seconds: 4
+    stat_card_hold_seconds: 4
+    transition_duration_seconds: 0.5
+  entrance: "soft overshoot with 24px rise; use a stronger hero reveal only at section peaks"
+  exit: "masked editorial wipe or short crossfade; reserve zoom-through for hero moments"
+
+audio:
+  voice_style: "warm, calm, evidence-led, conversational; deliberate emphasis on the hook, mechanism, and caution"
+  music_mood: "premium documentary pulse with organic percussion and light marimba texture"
+  music_volume: 0.07
+  sfx_style: "restrained whooshes, paper movement, soft ticks, low impact accents at hero reveals"
+  ducking_threshold_db: -4
+
+asset_generation:
+  image_prompt_prefix: "premium editorial health photography and accurate scientific illustration, cream background, navy and mustard palette, directional soft studio light, layered depth, generous negative space, "
+  image_negative_prompt: "embedded text, labels, watermark, logo, medical gore, surgery, fearmongering, miracle cure, pill advertising, distorted anatomy, clutter, cheap stock photo"
+  diagram_style: "navy vector mechanism paths with mustard active states, olive supporting states, explicit legends and evidence labels rendered in the composition engine"
+  consistency_anchors:
+    - "Cream #F4EEDC base with navy editorial hierarchy"
+    - "Mustard is reserved for active mechanisms and hero claims"
+    - "Use Professional Motion Pack scenes for mechanism, evidence, myth/reality, timeline, and ingredient focus"
+    - "Use no more than three transition families in one video"
+    - "Generated visuals contain no text; labels and citations are composed deterministically"
+
+overlays:
+  stat_card:
+    bg: "#FFF9EA"
+    border: "#D79A2B"
+    radius: 18
+    shadow: "0 18px 55px rgba(23,50,77,0.16)"
+  key_term:
+    bg: "#E8E1CD"
+    text: "#17324D"
+    radius: 10
+  section_title:
+    bg: "#17324D"
+    text: "#FFF9EA"
+    radius: 14
+
+quality_rules:
+  - "Every medical or nutrition claim shown on screen has a source_ref"
+  - "Use association language unless the cited evidence supports causation"
+  - "Use a 20 percent strong, 60 percent medium, 20 percent rest motion rhythm"
+  - "Do not use more than three transition families in one deliverable"
+  - "Keep citation text readable for at least 3 seconds"
+  - "Minimum text contrast ratio 4.5:1"
+  - "No generated image may contain embedded typography or charts"
+  - "End with a visible educational-use medical disclaimer"
+
+chart_palette: ["#17324D", "#D79A2B", "#708B55", "#B85C4A", "#5F7E8C"]
+
+color_rules:
+  harmony_type: analogous
+  contrast_validation: true
+  colorblind_safe: true
+

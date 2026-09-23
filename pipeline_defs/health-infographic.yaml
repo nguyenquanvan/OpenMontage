@@ -1,0 +1,313 @@
+name: health-infographic
+version: "1.0"
+description: >
+  Video giải thích sức khỏe dạng editorial infographic: narration dẫn chuyện, ảnh thực phẩm/
+  cơ thể, sơ đồ cơ chế, thẻ dữ liệu, so sánh và phụ đề. Luồng bắt buộc kiểm chứng từng
+  tuyên bố sức khỏe bằng nguồn đáng tin cậy và hiển thị cảnh báo nội dung y khoa.
+category: health
+stability: beta
+default_checkpoint_policy: guided
+compatible_playbooks:
+  recommended: [health-editorial-pro]
+  also_works: [health-clinical-3d, health-food-documentary, health-editorial]
+  custom_allowed: true
+
+reference_input:
+  supported: true
+  analysis_depth: standard
+  analysis_tools:
+    - video_analyzer
+    - transcript_fetcher
+    - video_downloader
+    - scene_detect
+    - frame_sampler
+
+project_intake:
+  title: "Tạo video giải thích sức khỏe"
+  description: "Điền chủ đề; app sẽ tạo brief nghiên cứu, kịch bản, cảnh infographic, voice và bản dựng."
+  submit_label: "KHỞI TẠO VIDEO SỨC KHỎE"
+  style_playbook: health-editorial-pro
+  style_playbook_field: visual_style
+  brief_template: |
+    Tạo video giải thích sức khỏe dạng editorial infographic.
+
+    Chủ đề: {topic}
+    Đối tượng xem: {audience}
+    Thời lượng mục tiêu: {duration_minutes} phút
+    Ngôn ngữ narration và phụ đề: {language}
+    Góc nội dung mong muốn: {angle}
+    Phong cách hình ảnh: {visual_style}
+    Cường độ chuyển động: {motion_intensity}
+    Tỷ lệ khung hình: {aspect_ratio}
+    Video tham khảo (chỉ dùng để phân tích phong cách, không sao chép): {reference_url}
+
+    Yêu cầu bắt buộc:
+    - Nghiên cứu từ nguồn y khoa/khoa học đáng tin cậy và gắn nguồn cho mọi tuyên bố sức khỏe.
+    - Phân biệt rõ bằng chứng trên người, bằng chứng tiền lâm sàng và giả thuyết.
+    - Không chẩn đoán, kê đơn, cam kết điều trị hoặc phóng đại quan hệ nhân quả.
+    - Tạo visual nguyên bản: ảnh minh họa, sơ đồ cơ chế, so sánh và thẻ dữ liệu; không sao chép video tham khảo.
+    - Dùng Professional Motion Pack: mechanism flow, evidence ladder, myth/reality, timeline và ingredient spotlight khi phù hợp.
+    - Nhịp chuyển động theo tỷ lệ 20% cảnh mạnh, 60% cảnh vừa, 20% cảnh nghỉ; không lạm dụng hiệu ứng.
+    - Có disclaimer mở đầu hoặc kết video: nội dung chỉ nhằm mục đích giáo dục, không thay thế tư vấn y tế.
+  fields:
+    - name: topic
+      label: "Chủ đề sức khỏe"
+      type: textarea
+      required: true
+      placeholder: "Ví dụ: Gừng sống và gừng nấu chín ảnh hưởng khác nhau thế nào?"
+      help: "Nêu câu hỏi hoặc luận điểm chính của video."
+    - name: audience
+      label: "Đối tượng xem"
+      type: text
+      required: true
+      default: "Người trưởng thành quan tâm sức khỏe, không có nền tảng y khoa"
+      placeholder: "Ví dụ: người trên 40 tuổi"
+    - name: duration_minutes
+      label: "Thời lượng"
+      type: select
+      required: true
+      default: "8"
+      options:
+        - value: "3"
+          label: "3 phút"
+        - value: "5"
+          label: "5 phút"
+        - value: "8"
+          label: "8 phút (giống cấu trúc mẫu)"
+        - value: "10"
+          label: "10 phút"
+    - name: language
+      label: "Ngôn ngữ"
+      type: select
+      required: true
+      default: "Tiếng Việt"
+      options:
+        - value: "Tiếng Việt"
+          label: "Tiếng Việt"
+        - value: "English"
+          label: "English"
+    - name: angle
+      label: "Góc nội dung"
+      type: text
+      default: "So sánh, giải thích cơ chế và hướng dẫn ứng dụng an toàn"
+      placeholder: "Ví dụ: phá hiểu lầm phổ biến"
+    - name: visual_style
+      label: "Phong cách hình ảnh"
+      type: select
+      required: true
+      default: "health-editorial-pro"
+      help: "Phong cách này được lưu thành style playbook của dự án."
+      options:
+        - value: "health-editorial-pro"
+          label: "Editorial cao cấp — đề xuất"
+        - value: "health-clinical-3d"
+          label: "Clinical 3D — khoa học hiện đại"
+        - value: "health-food-documentary"
+          label: "Food documentary — ấm và tự nhiên"
+    - name: motion_intensity
+      label: "Cường độ chuyển động"
+      type: select
+      required: true
+      default: "balanced"
+      options:
+        - value: "subtle"
+          label: "Tinh tế"
+        - value: "balanced"
+          label: "Cân bằng — đề xuất"
+        - value: "dynamic"
+          label: "Năng động"
+    - name: aspect_ratio
+      label: "Tỷ lệ video"
+      type: select
+      required: true
+      default: "16:9"
+      options:
+        - value: "16:9"
+          label: "YouTube ngang 16:9"
+        - value: "9:16"
+          label: "Shorts / Reels 9:16"
+        - value: "1:1"
+          label: "Vuông 1:1"
+    - name: reference_url
+      label: "Video tham khảo"
+      type: url
+      default: "https://www.youtube.com/watch?v=XWQwzV-BplU"
+      placeholder: "https://www.youtube.com/watch?v=..."
+
+extensions:
+  custom_scripts: true
+  custom_playbooks: true
+  custom_skills: true
+  custom_tools: false
+
+required_skills:
+  - pipelines/health-infographic/executive-producer
+  - pipelines/health-infographic/research-director
+  - pipelines/health-infographic/proposal-director
+  - pipelines/health-infographic/script-director
+  - pipelines/health-infographic/scene-director
+  - pipelines/health-infographic/asset-director
+  - pipelines/health-infographic/edit-director
+  - pipelines/health-infographic/compose-director
+  - pipelines/health-infographic/publish-director
+  - meta/reviewer
+  - meta/checkpoint-protocol
+  - meta/video-reference-analyst
+  - meta/voice-performance-director
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/health-infographic/executive-producer
+  budget_default_usd: 1.50
+  max_revisions_per_stage: 3
+  max_send_backs: 3
+  max_wall_time_minutes: 45
+
+compatible_playbooks:
+  recommended:
+    - health-editorial
+  also_works:
+    - clean-professional
+    - minimalist-diagram
+  custom_allowed: true
+
+stages:
+  - name: research
+    skill: pipelines/health-infographic/research-director
+    produces: [research_brief]
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Mọi claim sức khỏe có URL nguồn và mức độ bằng chứng
+      - Ưu tiên hướng dẫn chính thức, systematic review và nghiên cứu gốc
+      - Phân biệt association, mechanism và causation
+      - Có chống chỉ định, tương tác hoặc nhóm cần thận trọng khi liên quan
+    success_criteria:
+      - Schema-valid research_brief với ít nhất 5 nguồn
+      - metadata.claim_evidence_matrix hiện diện
+      - metadata.medical_safety_notes hiện diện
+
+  - name: proposal
+    skill: pipelines/health-infographic/proposal-director
+    required_artifacts_in: [research_brief]
+    produces: [proposal_packet, decision_log]
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Ba concept khác nhau về hook và cấu trúc
+      - Chi phí/provider được trình bày trước khi phát sinh chi phí
+      - Remotion và HyperFrames đều được trình bày nếu cùng khả dụng
+      - Disclaimer và chiến lược trích nguồn được duyệt
+      - Có sample motion 10–15 giây dùng đúng visual_style và motion_intensity
+    success_criteria:
+      - Schema-valid proposal_packet
+      - render_runtime và composition_mode được ghi trong production_plan
+      - approval.status được duyệt trước stage script
+
+  - name: script
+    skill: pipelines/health-infographic/script-director
+    required_artifacts_in: [proposal_packet, research_brief]
+    produces: [script]
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Mọi câu factual có source_ref
+      - Không có ngôn ngữ chẩn đoán, kê đơn hoặc cam kết kết quả
+      - Nhịp narration phù hợp thời lượng mục tiêu
+      - Disclaimer rõ, ngắn và không bị che khuất
+    success_criteria:
+      - Schema-valid script
+      - Tất cả claim y khoa truy ngược được về research_brief
+
+  - name: scene_plan
+    skill: pipelines/health-infographic/scene-director
+    required_artifacts_in: [script]
+    optional_artifacts_in: [proposal_packet, research_brief]
+    produces: [scene_plan]
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Xen kẽ ảnh, sơ đồ, thẻ dữ liệu, so sánh và recap
+      - Không có ba cảnh liên tiếp cùng một kiểu
+      - Text, chart và nhãn khoa học được dựng bằng composition engine
+      - Mỗi cảnh có mục tiêu học tập và source_ref
+      - Cảnh dùng Professional Motion Pack có đúng data contract
+      - Nhịp motion 20/60/20 và chỉ dùng tối đa ba họ transition
+    success_criteria:
+      - Schema-valid scene_plan
+      - Toàn bộ script được phủ, không có khoảng trống timeline
+
+  - name: assets
+    skill: pipelines/health-infographic/asset-director
+    required_artifacts_in: [scene_plan, script]
+    optional_artifacts_in: [proposal_packet, research_brief]
+    produces: [asset_manifest]
+    required_tools: [tts_selector, image_selector]
+    optional_tools: [diagram_gen, music_gen]
+    tools_available: [tts_selector, image_selector, diagram_gen, music_gen]
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Narration đầy đủ và phát âm đúng thuật ngữ
+      - Ảnh không chứa chữ AI bị lỗi hoặc watermark
+      - Sơ đồ không ngụ ý quan hệ nhân quả vượt quá bằng chứng
+      - Tổng chi phí không vượt ngân sách được duyệt
+    success_criteria:
+      - Schema-valid asset_manifest
+      - Mọi file asset tồn tại và có provenance
+
+  - name: edit
+    skill: pipelines/health-infographic/edit-director
+    required_artifacts_in: [scene_plan, asset_manifest]
+    optional_artifacts_in: [script, proposal_packet]
+    produces: [edit_decisions]
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Subtitle dễ đọc và không che diagram
+      - Nhạc duck dưới narration
+      - Citation và disclaimer giữ đủ thời gian đọc
+      - render_runtime khớp proposal đã duyệt
+    success_criteria:
+      - Schema-valid edit_decisions
+      - Timeline phủ đủ thời lượng và không có gap
+
+  - name: compose
+    skill: pipelines/health-infographic/compose-director
+    required_artifacts_in: [edit_decisions, asset_manifest]
+    optional_artifacts_in: [scene_plan, script, proposal_packet]
+    produces: [render_report, final_review]
+    required_tools: [video_compose, audio_mixer]
+    optional_tools: [video_stitch]
+    tools_available: [video_compose, hyperframes_compose, audio_mixer, video_stitch]
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Video phát được, đúng resolution và duration
+      - render_runtime không bị đổi ngầm
+      - Narration, subtitle, citation và visual đồng bộ
+      - Không có frame lỗi, chữ tràn hoặc audio clipping
+    success_criteria:
+      - Schema-valid render_report và final_review
+      - File output vượt qua ffprobe
+
+  - name: publish
+    skill: pipelines/health-infographic/publish-director
+    required_artifacts_in: [render_report, final_review]
+    optional_artifacts_in: [proposal_packet, research_brief]
+    produces: [publish_log]
+    tools_available: [export_bundle]
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Mô tả video có bibliography và disclaimer
+      - Tiêu đề/thumbnail không hứa hẹn chữa bệnh
+      - Gói xuất bản có video, metadata và nguồn
+    success_criteria:
+      - Schema-valid publish_log
+      - Export bundle chứa bibliography và disclaimer

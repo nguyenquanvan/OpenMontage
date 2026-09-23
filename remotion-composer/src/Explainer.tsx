@@ -30,6 +30,20 @@ import type { TerminalStep } from "./components/TerminalScene";
 import { ScreenshotScene } from "./components/ScreenshotScene";
 import type { ScreenshotStep } from "./components/ScreenshotScene";
 import { ProviderChip } from "./components/ProviderChip";
+import {
+  EvidenceLadder,
+  IngredientSpotlight,
+  MechanismFlow,
+  MotionFrame,
+  MythReality,
+  TimelineSteps,
+} from "./components/pro-motion";
+import type {
+  EvidenceLevel,
+  MechanismNode,
+  MotionIntensity,
+  TimelineStep as MotionTimelineStep,
+} from "./components/pro-motion";
 import { resolveAsset } from "./lib/resolveAsset";
 import type { ParticleType } from "./components/ParticleOverlay";
 import { resolveTheme, type ThemeConfig, DEFAULT_THEME } from "./Root";
@@ -268,6 +282,19 @@ interface Cut {
   screenshotSteps?: ScreenshotStep[];
   screenshotSize?: { width: number; height: number };
   cursorStartAt?: [number, number];
+  // Professional Motion Pack scene props
+  sourceLabel?: string;
+  motion_intensity?: MotionIntensity;
+  mechanismNodes?: MechanismNode[];
+  evidenceLevels?: EvidenceLevel[];
+  myth?: string;
+  reality?: string;
+  takeaway?: string;
+  timelineSteps?: MotionTimelineStep[];
+  ingredientImage?: string;
+  facts?: string[];
+  badge?: string;
+  secondaryColor?: string;
 }
 
 interface Overlay {
@@ -308,6 +335,7 @@ export interface ExplainerProps {
   overlays?: Overlay[];
   captions?: WordCaption[];
   audio?: AudioConfig;
+  motionIntensity?: MotionIntensity;
 }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +753,80 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
     );
   }
 
+  // --- Professional Motion Pack: evidence-led editorial scenes ---
+  if (cut.type === "mechanism_flow" && cut.mechanismNodes?.length) {
+    return maybeWrapWithBg(
+      <MechanismFlow
+        title={cut.title}
+        subtitle={cut.subtitle}
+        nodes={cut.mechanismNodes}
+        sourceLabel={cut.sourceLabel}
+        backgroundColor={bgColor || theme.backgroundColor}
+        textColor={textColor}
+        accentColor={accent}
+        secondaryColor={cut.secondaryColor || theme.primaryColor}
+      />
+    );
+  }
+  if (cut.type === "evidence_ladder" && cut.evidenceLevels?.length) {
+    return maybeWrapWithBg(
+      <EvidenceLadder
+        title={cut.title}
+        subtitle={cut.subtitle}
+        levels={cut.evidenceLevels}
+        sourceLabel={cut.sourceLabel}
+        backgroundColor={bgColor || theme.backgroundColor}
+        textColor={textColor}
+        accentColor={accent}
+        mutedColor={cut.secondaryColor || theme.primaryColor}
+      />
+    );
+  }
+  if (cut.type === "myth_reality" && cut.myth && cut.reality) {
+    return maybeWrapWithBg(
+      <MythReality
+        title={cut.title}
+        myth={cut.myth}
+        reality={cut.reality}
+        takeaway={cut.takeaway}
+        sourceLabel={cut.sourceLabel}
+        backgroundColor={bgColor || theme.backgroundColor}
+        textColor={textColor}
+        accentColor={accent}
+        positiveColor={cut.secondaryColor || theme.primaryColor}
+      />
+    );
+  }
+  if (cut.type === "timeline_steps" && cut.timelineSteps?.length) {
+    return maybeWrapWithBg(
+      <TimelineSteps
+        title={cut.title}
+        subtitle={cut.subtitle}
+        steps={cut.timelineSteps}
+        sourceLabel={cut.sourceLabel}
+        backgroundColor={bgColor || theme.backgroundColor}
+        textColor={textColor}
+        accentColor={accent}
+        secondaryColor={cut.secondaryColor || theme.primaryColor}
+      />
+    );
+  }
+  if (cut.type === "ingredient_spotlight" && cut.title) {
+    return maybeWrapWithBg(
+      <IngredientSpotlight
+        title={cut.title}
+        subtitle={cut.subtitle}
+        image={cut.ingredientImage || cut.source || undefined}
+        badge={cut.badge}
+        facts={cut.facts}
+        sourceLabel={cut.sourceLabel}
+        backgroundColor={bgColor || theme.backgroundColor}
+        textColor={textColor}
+        accentColor={accent}
+      />
+    );
+  }
+
   // --- Anime scene (multi-image crossfade + particles) ---
   if (cut.type === "anime_scene" && cut.images && cut.images.length > 0) {
     return (
@@ -835,7 +937,7 @@ const OverlayRenderer: React.FC<{ overlay: Overlay; theme: ThemeConfig }> = ({
 // ---------------------------------------------------------------------------
 
 export const Explainer: React.FC<ExplainerProps> = (props) => {
-  const { cuts, overlays, captions, audio } = props;
+  const { cuts, overlays, captions, audio, motionIntensity = "balanced" } = props;
   const { fps, durationInFrames } = useVideoConfig();
 
   // Resolve theme from props — playbook name, theme name, or custom themeConfig
@@ -853,7 +955,15 @@ export const Explainer: React.FC<ExplainerProps> = (props) => {
 
         return (
           <Sequence key={cut.id} from={from} durationInFrames={duration}>
-            <SceneRenderer cut={cut} theme={theme} />
+            <MotionFrame
+              transitionIn={cut.transition_in}
+              transitionOut={cut.transition_out}
+              transitionDuration={cut.transition_duration ?? theme.transitionDuration}
+              intensity={cut.motion_intensity || motionIntensity}
+              accentColor={cut.accentColor || theme.accentColor}
+            >
+              <SceneRenderer cut={cut} theme={theme} />
+            </MotionFrame>
           </Sequence>
         );
       })}

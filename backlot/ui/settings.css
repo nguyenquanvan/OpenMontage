@@ -85,6 +85,11 @@ code { color: var(--text); }
 .version-value { display: grid; gap: 7px; min-width: 230px; text-align: right; }
 .version-value strong { color: var(--amber); font: 600 18px var(--mono); }
 .version-value code { color: var(--text-3); font-size: 10px; overflow-wrap: anywhere; }
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 5px; }
+.update-actions button { padding: 9px 12px; border: 1px solid rgba(240,168,60,.5); border-radius: 7px; background: rgba(240,168,60,.1); color: var(--amber); cursor: pointer; font: 600 9px var(--mono); letter-spacing: .06em; }
+.update-actions button#install-update { background: var(--amber); color: #17130d; }
+.update-actions button:disabled { cursor: wait; opacity: .55; }
+.update-status { color: var(--text-2); font-size: 11px; line-height: 1.45; }
 .runtime-copy h2 { margin: 7px 0 6px; font-size: 17px; letter-spacing: .04em; }
 .runtime-copy p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; }
 .runtime-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
@@ -162,6 +167,7 @@ code { color: var(--text); }
   .security-note span { display: block; margin-top: 7px; }
   .version-panel { display: block; }
   .version-value { min-width: 0; margin-top: 14px; text-align: left; }
+  .update-actions { justify-content: flex-start; flex-wrap: wrap; }
   .cost-panel { grid-template-columns: 1fr; }
   .cost-note { grid-column: auto; }
   .provider-list { grid-template-columns: 1fr; }

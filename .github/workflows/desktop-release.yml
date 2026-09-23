@@ -2,6 +2,11 @@ name: Desktop release
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm_version:
+        description: "Version expected from lib/app_version.py (example: 1.6.0)"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -22,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,6 +40,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-packaging.txt
+
+      - name: Verify release version
+        shell: bash
+        run: |
+          VERSION="$(python -c 'from lib.app_version import APP_VERSION; print(APP_VERSION)')"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match app version v${VERSION}" >&2
+            exit 1
+          fi
+          if [[ -n "${{ inputs.confirm_version }}" && "${{ inputs.confirm_version }}" != "${VERSION}" ]]; then
+            echo "Requested version ${{ inputs.confirm_version }} does not match ${VERSION}" >&2
+            exit 1
+          fi
 
       - name: Build desktop app
         run: python scripts/build_desktop.py
@@ -136,6 +156,7 @@ jobs:
             dist/*.dmg
             dist/*-Setup-*.exe
             dist/*.zip
+            dist/MOSA-TOOL-ALL-version.json
           if-no-files-found: error
 
   release:
@@ -150,16 +171,33 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mosa-tool-all-macos
-          path: release
+          path: release/macos
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: mosa-tool-all-windows
-          path: release
+          path: release/windows
+
+      - name: Collect release files
+        run: |
+          mkdir -p release/assets
+          cp release/macos/*.dmg release/assets/
+          cp release/windows/*-Setup-*.exe release/assets/
+          cp release/windows/*.zip release/assets/
+          cp release/windows/MOSA-TOOL-ALL-version.json release/assets/
+
+      - name: Generate SHA-256 manifest
+        working-directory: release/assets
+        run: |
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  \./#  #' > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*
+          files: release/assets/*
           generate_release_notes: true

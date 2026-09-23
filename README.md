@@ -366,6 +366,7 @@ Each pipeline is a complete production workflow, from idea to finished video.
 | Pipeline | What It Produces | Best For |
 |----------|-----------------|----------|
 | **Animated Explainer** | AI-generated explainer with research, narration, visuals, music | Educational content, tutorials, topic breakdowns |
+| **Health Infographic** | Evidence-led health explainer with narration, editorial imagery, mechanism diagrams, citations, and medical disclaimer | Food science, nutrition, wellness, anatomy, and public-health education |
 | **Animation** | Motion graphics, kinetic typography, animated sequences | Social media, product demos, abstract concepts |
 | **Avatar Spokesperson** | Avatar-driven presenter videos | Corporate comms, training, announcements |
 | **Cinematic** | Trailer, teaser, and mood-driven edits | Brand films, teasers, promotional content |
@@ -706,7 +707,10 @@ OpenMontage works with any AI coding assistant that can read files and execute P
 
 All platform files point to the shared `AGENT_GUIDE.md` (operating guide and agent contract) and `PROJECT_CONTEXT.md` (architecture reference).
 
-> **Coming soon:** Local LLM support via **Ollama** and **LM Studio** — run the full production pipeline without any cloud LLM.
+> **Local LLM:** MOSA TOOL ALL Desktop hỗ trợ **Ollama** trong cửa sổ
+> **Bắt đầu workflow**. Agent loop local có thể đọc pipeline/schema, ghi artifact,
+> chạy các tool on-device 0 USD và lưu checkpoint; tool cloud, hybrid hoặc có chi phí
+> bị chặn. App có thể tải `llama3.1:8b` sau khi Ollama đã được cài và mở trên máy.
 
 ---
 
@@ -790,10 +794,36 @@ If you'd like to go further, [sponsor the project](https://github.com/sponsors/c
 MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
 
-Phiên bản hiện tại: **MOSA TOOL ALL `v1.2.1` · build `20260921.2`**. App hiển thị
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.5.7` · build `20260923.6`**. App hiển thị
 phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
 `GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
 trong `lib/app_version.py`.
+
+### Agent miễn phí bằng Ollama
+
+Trong board dự án, chọn **Bắt đầu workflow → Ollama — miễn phí trên máy**. Nếu
+Ollama chưa chạy, app hiện liên kết cài đặt cho Windows/macOS; nếu runtime đã chạy
+nhưng chưa có model, nút **Tải Llama 3.1 8B** sẽ tải model vào Ollama. Danh sách
+model đã cài được đưa thẳng vào ô Model. Local runner không đọc `.env`/credential,
+không gọi provider cloud và chỉ ghi trong workspace dự án.
+
+### Video giải thích sức khỏe
+
+Chọn **Luồng làm việc → Video giải thích sức khỏe → Dùng luồng này**. Form chuyên
+biệt nhận chủ đề, đối tượng, thời lượng, ngôn ngữ, góc nội dung và video tham khảo;
+app tạo sẵn brief khi mở board. Pipeline bắt buộc nghiên cứu nguồn, ma trận bằng
+chứng, source cho từng claim, disclaimer y khoa và duyệt người dùng trước khi phát
+sinh chi phí. Video tham khảo chỉ dùng để phân tích phong cách, không sao chép nội
+dung hoặc tài sản của tác giả.
+
+### Professional Motion Pack
+
+Luồng `health-infographic` có ba phong cách chọn ngay khi tạo dự án:
+`health-editorial-pro`, `health-clinical-3d`, và `health-food-documentary`.
+Remotion composer hỗ trợ thêm năm scene dữ liệu chuyển động (`mechanism_flow`,
+`evidence_ladder`, `myth_reality`, `timeline_steps`, `ingredient_spotlight`),
+ba mức motion, và các transition `fade`, `slide`, `wipe`, `iris`, `zoom-through`,
+`light-sweep`. Mọi claim sức khỏe vẫn phải có `sourceLabel`/`source_ref` và disclaimer.
 
 ### Model Center cho máy nhân viên
 

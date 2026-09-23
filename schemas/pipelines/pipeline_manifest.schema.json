@@ -11,7 +11,7 @@
     "description": { "type": "string" },
     "category": {
       "type": "string",
-      "enum": ["talking_head", "generated", "hybrid", "screen_recording", "animation", "cinematic", "documentary", "custom"]
+      "enum": ["talking_head", "generated", "hybrid", "screen_recording", "animation", "cinematic", "documentary", "health", "custom"]
     },
     "stability": {
       "type": "string",
@@ -165,6 +165,56 @@
         "analysis_depth": { "type": "string", "enum": ["transcript_only", "standard", "deep"], "default": "standard" },
         "analysis_tools": { "type": "array", "items": { "type": "string" } }
       }
+    },
+    "project_intake": {
+      "type": "object",
+      "description": "Optional project-creation form shown by Backlot for a specialized workflow.",
+      "required": ["fields", "brief_template"],
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "submit_label": { "type": "string" },
+        "style_playbook": { "type": "string" },
+        "style_playbook_field": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Optional project_intake select field whose validated value overrides style_playbook."
+        },
+        "brief_template": { "type": "string", "minLength": 1 },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "label", "type"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+              "label": { "type": "string" },
+              "type": { "type": "string", "enum": ["text", "textarea", "url", "number", "select"] },
+              "required": { "type": "boolean", "default": false },
+              "placeholder": { "type": "string" },
+              "help": { "type": "string" },
+              "default": { "type": ["string", "number"] },
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["value", "label"],
+                  "properties": {
+                    "value": { "type": "string" },
+                    "label": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "metadata": { "type": "object" },
     "orchestration": {

@@ -67,6 +67,28 @@ def configure_user_paths(data_dir: Path) -> None:
     os.environ.setdefault("OPENMONTAGE_CACHE_DIR", str(data_dir / ".backlot"))
 
 
+def configure_agent_path() -> None:
+    """Expose user-installed coding agents to a GUI app's minimal PATH."""
+    candidates = [
+        Path.home() / ".local" / "bin",
+        Path.home() / ".npm-global" / "bin",
+    ]
+    if sys.platform == "darwin":
+        candidates.extend([
+            Path("/opt/homebrew/bin"),
+            Path("/usr/local/bin"),
+            Path("/Applications/ChatGPT.app/Contents/Resources"),
+        ])
+    elif sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidates.append(Path(appdata) / "npm")
+    current = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+    additions = [str(path) for path in candidates if path.is_dir() and str(path) not in current]
+    if additions:
+        os.environ["PATH"] = os.pathsep.join(additions + current)
+
+
 def choose_port(preferred: int = DEFAULT_PORT) -> int:
     """Use the familiar development port when free, otherwise pick a port."""
     for candidate in (preferred, 0):
@@ -156,11 +178,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Chỉ chạy Backlot server, dùng cho kiểm tra bản đóng gói",
     )
+    parser.add_argument("--ollama-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--project-dir", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--prompt-file", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--model", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     data_dir = user_data_dir()
     configure_user_paths(data_dir)
     configure_bundled_runtime()
+    configure_agent_path()
+    if args.ollama_worker:
+        if args.project_dir is None or args.prompt_file is None:
+            parser.error("--ollama-worker requires --project-dir and --prompt-file")
+        from backlot.ollama_agent import run_agent
+
+        try:
+            return run_agent(args.project_dir, args.prompt_file, args.model)
+        except Exception as exc:
+            print(f"[ollama] LỖI: {exc}", flush=True)
+            return 1
     port = choose_port(args.port)
     server = start_server(port)
     url = f"http://127.0.0.1:{port}/"

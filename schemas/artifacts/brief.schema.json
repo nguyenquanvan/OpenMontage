@@ -15,7 +15,7 @@
       "minItems": 1
     },
     "core_message": { "type": "string" },
-    "cta": { "type": "string", "description": "Call to action" },
+    "cta": { "type": ["string", "null"], "description": "Call to action; null when the video intentionally has no CTA" },
     "tone": { "type": "string" },
     "style": { "type": "string", "description": "Style playbook name or custom description" },
     "target_audience": { "type": "string" },

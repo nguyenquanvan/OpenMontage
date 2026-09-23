@@ -22,6 +22,11 @@ When you add a new component, append it here and in `src/components/index.ts`.
 | `pie_chart` | `PieChart` | `chartData` | `donut`, `centerLabel`, `centerValue`, `showLegend` | Pie / donut |
 | `kpi_grid` | `KPIGrid` | `chartData` | `title`, `columns`, `chartAnimation` | 2–4 column KPI grid |
 | `progress_bar` | `ProgressBar` | `progress` | `progressLabel`, `progressColor`, `progressSegments` | Animated progress |
+| **`mechanism_flow`** | **`MechanismFlow`** | **`mechanismNodes`** | `title`, `subtitle`, `sourceLabel`, `secondaryColor` | Animated cause/mechanism chain with staged connectors |
+| **`evidence_ladder`** | **`EvidenceLadder`** | **`evidenceLevels`** | `title`, `subtitle`, `sourceLabel` | Evidence-strength hierarchy with animated confidence bars |
+| **`myth_reality`** | **`MythReality`** | **`myth`, `reality`** | `title`, `takeaway`, `sourceLabel` | Myth-versus-reality correction card |
+| **`timeline_steps`** | **`TimelineSteps`** | **`timelineSteps`** | `title`, `subtitle`, `sourceLabel` | Alternating animated process timeline |
+| **`ingredient_spotlight`** | **`IngredientSpotlight`** | **`title`** | `ingredientImage` or `source`, `facts`, `badge`, `sourceLabel` | Editorial hero layout for ingredients or products |
 | `anime_scene` | `AnimeScene` | `images` (list) | `particles`, `lightingFrom`, `lightingTo`, `vignette` | Still-image anime scene with particles + camera motion |
 | **`terminal_scene`** | **`TerminalScene`** | **`steps`** (list of cmd/out/pause/pill) | **`terminalTitle`, `prompt`, `accentColor`** | **Synthetic terminal animation — NO real capture needed. See [`.agents/skills/synthetic-screen-recording/SKILL.md`](../.agents/skills/synthetic-screen-recording/SKILL.md)** |
 | **`screenshot_scene`** | **`ScreenshotScene`** | **`backgroundImage`** (path in `public/`), **`screenshotSteps`** (list of overlays) | **`screenshotSize` (natural px w/h), `cursorStartAt`, `accentColor`** | **Approach-1 synthetic UI — drop any screenshot, animate scripted overlays on top (cursor, click_pulse, type_into, bubble_append, typing_dots, highlight_box, callout_balloon). Viewer-indistinguishable from a real recording for 15–30s focused demos. Coordinates are normalized (0–1) against the contain-fit rect. See [`.agents/skills/synthetic-ui-recording/SKILL.md`](../.agents/skills/synthetic-ui-recording/SKILL.md) (planned).** |
@@ -36,6 +41,13 @@ When you add a new component, append it here and in `src/components/index.ts`.
 | `stat_reveal` | `StatReveal` | `text` | `subtitle`, `accentColor`, `position` | Corner stat badge |
 | `hero_title` | `HeroTitle` (as overlay) | `text` | `subtitle` | Full-frame title overlay |
 | **`provider_chip`** | **`ProviderChip`** | **`providers`** (list of strings) | **`cycleSeconds`, `position`, `accentColor`, `label`** | **Rotating badge that cycles through provider names — used in AI-generated-motion scenes to show which model produced the clip** |
+
+## Professional transitions
+
+All cut types support `transition_in`, `transition_out`, `transition_duration`, and
+`motion_intensity` (`subtle`, `balanced`, or `dynamic`). The shared `MotionFrame`
+supports `fade`, `slide-left`, `slide-right`, `slide-up`, `wipe-left`, `iris`,
+`zoom-through`, `light-sweep`, and hard `cut`/`none` transitions.
 
 ---
 

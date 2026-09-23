@@ -113,6 +113,7 @@ stages:
     success_criteria:
       - Schema-valid asset_manifest artifact
       - One video asset per scene slot
+      - Every asset path exists on disk and is a non-empty file before awaiting_human
       - metadata.corpus_stats present (standard path) OR metadata.search_stats present (fast path)
 
   - name: edit

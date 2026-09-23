@@ -13,6 +13,20 @@ export { AnimeScene } from "./AnimeScene";
 export { TerminalScene } from "./TerminalScene";
 export { ScreenshotScene } from "./ScreenshotScene";
 export { ProviderChip } from "./ProviderChip";
+export {
+  EvidenceLadder,
+  IngredientSpotlight,
+  MechanismFlow,
+  MotionFrame,
+  MythReality,
+  TimelineSteps,
+} from "./pro-motion";
+export type {
+  EvidenceLevel,
+  MechanismNode,
+  MotionIntensity,
+  TimelineStep,
+} from "./pro-motion";
 export type { ParticleType } from "./ParticleOverlay";
 export type { CameraMotion, AnimeSceneProps } from "./AnimeScene";
 export type { TerminalStep } from "./TerminalScene";

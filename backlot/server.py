@@ -29,8 +29,11 @@ from backlot.settings import (
     validate_cost_settings,
 )
 from backlot.free_models import free_model_catalog
-from backlot.runner import available_agents, get_run, start_run
+from backlot.runner import available_agents, get_run, review_gate, start_run
+from backlot.ollama_agent import DEFAULT_MODEL, model_pull_status, start_model_pull
 from backlot.model_installer import install_catalog, start_install, start_runtime_repair, uninstall_model
+from backlot.asset_materializer import materialization_status, start_materialization
+from backlot.app_updater import start_update, update_status
 from lib.app_version import version_payload
 from lib.runtime import runtime_status
 
@@ -45,6 +48,7 @@ SSE_HEARTBEAT_SECONDS = 15
 PROJECT_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MAX_PROJECT_ID_LENGTH = 80
 MAX_PROJECT_TITLE_LENGTH = 200
+MAX_INTAKE_VALUE_LENGTH = 4_000
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -157,9 +161,59 @@ def _workflow_catalog() -> list[dict]:
             "budget_default_usd": orchestration.get("budget_default_usd"),
             "max_wall_time_minutes": orchestration.get("max_wall_time_minutes"),
             "reference_input": bool(reference_input.get("supported", False)),
+            "project_intake": manifest.get("project_intake"),
             "stages": stages,
         })
     return workflows
+
+
+def _validate_project_intake(manifest: dict, payload: object) -> tuple[dict[str, str], str | None]:
+    config = manifest.get("project_intake")
+    if not config:
+        return {}, None
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Thông tin dự án không hợp lệ")
+
+    fields = config.get("fields") or []
+    known = {field["name"] for field in fields}
+    unknown = set(payload) - known
+    if unknown:
+        raise HTTPException(status_code=400, detail="Thông tin dự án chứa trường không hợp lệ")
+
+    values: dict[str, str] = {}
+    for field in fields:
+        name = field["name"]
+        raw = payload.get(name, field.get("default", ""))
+        value = str(raw).strip() if raw is not None else ""
+        if field.get("required") and not value:
+            raise HTTPException(status_code=400, detail=f"Hãy điền {field['label']}")
+        if len(value) > MAX_INTAKE_VALUE_LENGTH:
+            raise HTTPException(status_code=400, detail=f"{field['label']} quá dài")
+        if field.get("type") == "select":
+            allowed = {str(option["value"]) for option in field.get("options", [])}
+            if value and value not in allowed:
+                raise HTTPException(status_code=400, detail=f"{field['label']} không hợp lệ")
+        if field.get("type") == "url" and value and not re.fullmatch(r"https?://[^\s]+", value):
+            raise HTTPException(status_code=400, detail=f"{field['label']} phải là URL http(s)")
+        if field.get("type") == "number" and value:
+            try:
+                number = float(value)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"{field['label']} phải là số") from exc
+            if field.get("min") is not None and number < field["min"]:
+                raise HTTPException(status_code=400, detail=f"{field['label']} quá nhỏ")
+            if field.get("max") is not None and number > field["max"]:
+                raise HTTPException(status_code=400, detail=f"{field['label']} quá lớn")
+        values[name] = value
+
+    brief = str(config.get("brief_template") or "")
+    for name, value in values.items():
+        brief = brief.replace("{" + name + "}", value)
+    if len(brief) > 12_000:
+        raise HTTPException(status_code=400, detail="Brief dự án quá dài")
+    return values, brief.strip() or None
 
 
 # Watch-loop hot path: pure string comparison, no per-path filesystem calls
@@ -229,6 +283,17 @@ def create_app() -> FastAPI:
     async def version() -> dict[str, str]:
         return version_payload()
 
+    @app.get("/api/app-update")
+    async def app_update(force: bool = False) -> dict:
+        return await asyncio.to_thread(update_status, force=force)
+
+    @app.post("/api/app-update/install", status_code=202)
+    async def install_app_update() -> dict:
+        try:
+            return await asyncio.to_thread(start_update)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.get("/api/settings/providers")
     async def provider_settings() -> dict:
         return settings_status()
@@ -271,14 +336,16 @@ def create_app() -> FastAPI:
                 accept_license=bool((payload or {}).get("accept_license", False)),
             )
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            detail = str(exc).split("\n\nFailed validating", 1)[0].strip()
+            raise HTTPException(status_code=409, detail=detail[:600]) from exc
 
     @app.delete("/api/model-installs/{model_id}")
     async def remove_model(model_id: str) -> dict:
         try:
             return await asyncio.to_thread(uninstall_model, model_id)
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            detail = str(exc).split("\n\nFailed validating", 1)[0].strip()
+            raise HTTPException(status_code=409, detail=detail[:600]) from exc
 
     @app.post("/api/model-installs/{model_id}/runtime", status_code=202)
     async def repair_model_runtime(model_id: str) -> dict:
@@ -319,7 +386,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="Luồng sản xuất không hợp lệ")
 
         try:
-            await asyncio.to_thread(load_pipeline_readonly, pipeline_type)
+            manifest = await asyncio.to_thread(load_pipeline_readonly, pipeline_type)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=400, detail="Luồng sản xuất không tồn tại") from exc
         except Exception as exc:
@@ -329,12 +396,21 @@ def create_app() -> FastAPI:
         if project_dir.exists():
             raise HTTPException(status_code=409, detail="Mã dự án đã tồn tại")
 
+        intake, initial_brief = _validate_project_intake(manifest, payload.get("intake"))
+        intake_config = manifest.get("project_intake") or {}
+        style_playbook = intake_config.get("style_playbook")
+        style_field = intake_config.get("style_playbook_field")
+        if isinstance(style_field, str) and intake.get(style_field):
+            style_playbook = intake[style_field]
         await asyncio.to_thread(
             init_project,
             project_id,
             title=title,
             pipeline_type=pipeline_type,
             pipeline_dir=PROJECTS_DIR,
+            style_playbook=style_playbook,
+            initial_brief=initial_brief,
+            intake=intake or None,
         )
         _invalidate_summary(project_id)
         hub.publish(project_id)
@@ -343,6 +419,8 @@ def create_app() -> FastAPI:
             "project_id": project_id,
             "title": title,
             "pipeline_type": pipeline_type,
+            "style_playbook": style_playbook,
+            "brief_ready": bool(initial_brief),
             "url": f"/p/{project_id}",
         }
 
@@ -374,9 +452,59 @@ def create_app() -> FastAPI:
             status = 409 if "đang chạy" in detail else 400
             raise HTTPException(status_code=status, detail=detail) from exc
 
+    @app.post("/api/project/{project_id}/review")
+    async def project_review(project_id: str, payload: dict) -> dict:
+        _safe_project_dir(project_id)
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Payload phải là object")
+        try:
+            result = await asyncio.to_thread(
+                review_gate,
+                project_id,
+                stage=payload.get("stage", ""),
+                action=payload.get("action", ""),
+                note=payload.get("note", ""),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return result
+
+    @app.get("/api/project/{project_id}/assets/materialization")
+    async def project_asset_materialization(project_id: str) -> dict:
+        _safe_project_dir(project_id)
+        try:
+            return await asyncio.to_thread(materialization_status, project_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/project/{project_id}/assets/materialization", status_code=202)
+    async def materialize_project_assets(project_id: str) -> dict:
+        _safe_project_dir(project_id)
+        try:
+            result = await asyncio.to_thread(start_materialization, project_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return result
+
     @app.get("/api/agents")
     async def agents() -> list[dict]:
         return await asyncio.to_thread(available_agents)
+
+    @app.post("/api/agents/ollama/models", status_code=202)
+    async def pull_ollama_model(payload: dict | None = None) -> dict:
+        model = (payload or {}).get("model") or DEFAULT_MODEL
+        try:
+            return await asyncio.to_thread(start_model_pull, model)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/agents/ollama/models/{model:path}")
+    async def ollama_model_job(model: str) -> dict:
+        return await asyncio.to_thread(model_pull_status, model)
 
     @app.get("/api/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:

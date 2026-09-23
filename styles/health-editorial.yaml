@@ -1,0 +1,102 @@
+identity:
+  name: "Health Editorial Infographic"
+  category: motion-graphics
+  mood: warm, trustworthy, evidence-led
+  pace: moderate
+  best_for: "Long-form YouTube health and food explainers with narration, diagrams, comparisons, and citations"
+
+visual_language:
+  color_palette:
+    primary: ["#17324D", "#294861"]
+    accent: ["#D79A2B", "#708B55"]
+    background: "#F4EEDC"
+    text: "#142433"
+    muted: "#6F746E"
+  composition: "editorial grid, generous cream whitespace, asymmetric image-and-copy layouts, clear diagram hierarchy"
+  texture: "subtle paper grain with clean vector overlays; no medical-horror imagery"
+
+typography:
+  headings:
+    font: "Inter"
+    weight: 800
+    tracking: "-0.03em"
+  body:
+    font: "Inter"
+    weight: 500
+    line_height: 1.45
+  stat_card:
+    font: "Inter"
+    weight: 800
+    size_multiplier: 2.8
+  scale_system: "major_third"
+  weight_matrix:
+    title: 800
+    heading: 700
+    body: 500
+    caption: 500
+
+motion:
+  transitions: [fade, slide-left, diagram-build]
+  animation_style: "measured editorial reveals, restrained spring motion, chart values animate only after labels appear"
+  pacing_rules:
+    min_scene_hold_seconds: 3
+    max_scene_hold_seconds: 10
+    text_card_hold_seconds: 4
+    stat_card_hold_seconds: 4
+    transition_duration_seconds: 0.45
+  entrance: "fade-up 16px with soft ease-out"
+  exit: "crossfade or masked editorial wipe"
+
+audio:
+  voice_style: "warm, calm, evidence-led, conversational; slow down for scientific terms and cautions"
+  music_mood: "light documentary pulse, organic percussion, no dramatic medical tension"
+  music_volume: 0.07
+  sfx_style: "soft paper turns, subtle ticks, restrained whooshes"
+  ducking_threshold_db: -4
+
+asset_generation:
+  image_prompt_prefix: "warm editorial health photography and scientific illustration, cream background, navy and mustard accents, natural ingredients, accurate anatomy, generous negative space, "
+  image_negative_prompt: "embedded text, labels, watermark, logo, medical gore, surgery, fearmongering, miracle cure, pill advertising, distorted anatomy, clutter"
+  diagram_style: "clean navy vector lines, mustard highlights, olive secondary paths, explicit legends, citations kept outside generated imagery"
+  consistency_anchors:
+    - "Cream #F4EEDC background across editorial scenes"
+    - "Navy #17324D for primary labels and mechanism paths"
+    - "Mustard #D79A2B only for the active claim or key molecule"
+    - "Generated images contain no text; all labels are rendered by Remotion or HyperFrames"
+    - "Human anatomy is simplified but scientifically plausible, never sensational"
+
+overlays:
+  stat_card:
+    bg: "#FFF9EA"
+    border: "#D79A2B"
+    radius: 14
+    shadow: "0 8px 24px rgba(23,50,77,0.12)"
+  key_term:
+    bg: "#E8E1CD"
+    text: "#17324D"
+    radius: 8
+  section_title:
+    bg: "#17324D"
+    text: "#FFF9EA"
+    radius: 12
+
+quality_rules:
+  - "Every medical or nutrition claim shown on screen has a source_ref in the script and research brief"
+  - "Use association language unless the cited evidence supports causation"
+  - "Never show dosage, diagnosis, or treatment advice without explicit authoritative support and caution text"
+  - "Keep citation text readable for at least 3 seconds"
+  - "Minimum text contrast ratio 4.5:1"
+  - "No generated image may contain embedded typography or charts"
+  - "End with a visible educational-use medical disclaimer"
+
+chart_palette:
+  - "#17324D"
+  - "#D79A2B"
+  - "#708B55"
+  - "#B85C4A"
+  - "#5F7E8C"
+
+color_rules:
+  harmony_type: "analogous"
+  contrast_validation: true
+  colorblind_safe: true

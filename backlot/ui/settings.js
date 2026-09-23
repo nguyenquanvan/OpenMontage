@@ -6,12 +6,16 @@ const freeModels = document.getElementById("free-models");
 const runtimeStatus = document.getElementById("runtime-status");
 const appVersion = document.getElementById("app-version");
 const appBuild = document.getElementById("app-build");
+const checkUpdateButton = document.getElementById("check-update");
+const installUpdateButton = document.getElementById("install-update");
+const updateStatus = document.getElementById("update-status");
 
 let providers = [];
 let localSettings = [];
 let freeModelCatalog = [];
 let runtime = null;
 let modelPollTimer = null;
+let updatePollTimer = null;
 let selectedModelTier = "all";
 let settings = {
   cost_profile: "balanced",
@@ -27,6 +31,68 @@ async function loadAppVersion() {
   appVersion.textContent = version.label;
   appBuild.textContent = `MOSA_APP_VERSION=${version.version} · MOSA_APP_BUILD=${version.build}`;
 }
+
+function renderUpdate(payload) {
+  const job = payload.job || {};
+  const busy = ["queued", "downloading", "verifying", "launching"].includes(job.status);
+  checkUpdateButton.disabled = busy;
+  installUpdateButton.disabled = busy;
+  installUpdateButton.hidden = !payload.update_available || !payload.install_supported;
+  if (busy) {
+    updateStatus.textContent = `${job.detail || "Đang cập nhật…"} ${job.progress || 0}%`;
+  } else if (job.status === "launched") {
+    updateStatus.textContent = job.detail;
+  } else if (job.status === "error") {
+    updateStatus.textContent = `Lỗi cập nhật: ${job.detail}`;
+  } else if (payload.error) {
+    updateStatus.textContent = `Không kiểm tra được GitHub: ${payload.error}`;
+  } else if (payload.update_available) {
+    updateStatus.textContent = `Có bản v${payload.latest_version}: ${payload.asset_name || "mở trang phát hành"}.`;
+  } else {
+    updateStatus.textContent = `Đang dùng bản mới nhất v${payload.current_version}.`;
+  }
+  if (busy && !updatePollTimer) {
+    updatePollTimer = window.setInterval(() => checkForUpdate(false).catch(console.error), 1200);
+  } else if (!busy && updatePollTimer) {
+    window.clearInterval(updatePollTimer);
+    updatePollTimer = null;
+  }
+}
+
+async function checkForUpdate(force = false) {
+  const response = await fetch(`/api/app-update?force=${force ? "true" : "false"}`);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.detail || "Không kiểm tra được cập nhật");
+  renderUpdate(payload);
+  return payload;
+}
+
+checkUpdateButton.addEventListener("click", async () => {
+  checkUpdateButton.disabled = true;
+  updateStatus.textContent = "Đang kiểm tra GitHub Releases…";
+  try {
+    await checkForUpdate(true);
+  } catch (error) {
+    updateStatus.textContent = error.message || "Không kiểm tra được cập nhật";
+  } finally {
+    checkUpdateButton.disabled = false;
+  }
+});
+
+installUpdateButton.addEventListener("click", async () => {
+  if (!window.confirm("Tải bản mới, kiểm tra SHA-256 và mở trình cài đặt? App có thể tự đóng trong lúc cập nhật.")) return;
+  installUpdateButton.disabled = true;
+  updateStatus.textContent = "Đang chuẩn bị bản cập nhật…";
+  try {
+    const response = await fetch("/api/app-update/install", { method: "POST" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || "Không bắt đầu được cập nhật");
+    renderUpdate(payload);
+  } catch (error) {
+    updateStatus.textContent = error.message || "Không bắt đầu được cập nhật";
+    installUpdateButton.disabled = false;
+  }
+});
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({
@@ -364,4 +430,5 @@ form.addEventListener("submit", async (event) => {
 });
 
 loadAppVersion().catch((error) => setStatus(error.message || "Không đọc được phiên bản app", "error"));
+checkForUpdate(false).catch((error) => { updateStatus.textContent = error.message || "Không kiểm tra được cập nhật"; });
 load().catch((error) => setStatus(error.message || "Không tải được cấu hình", "error"));

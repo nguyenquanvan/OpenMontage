@@ -17,9 +17,11 @@
     <span class="chip" id="count"></span>
     <span class="chip app-version" id="appVersion" title="Phiên bản ứng dụng">ĐANG ĐỌC PHIÊN BẢN</span>
     <div class="spacer"></div>
-    <a class="settings-link primary-link" href="#new-project">＋ TẠO DỰ ÁN</a>
-    <a class="settings-link" href="#workflows">☰ LUỒNG LÀM VIỆC</a>
-    <a class="settings-link" href="/settings">⚙ CÀI ĐẶT API</a>
+    <nav class="main-menu" aria-label="Menu chính">
+      <a class="settings-link menu-create" href="#new-project">＋ TẠO DỰ ÁN</a>
+      <a class="settings-link menu-workflows" href="#workflows">☰ LUỒNG LÀM VIỆC</a>
+      <a class="settings-link menu-settings" href="/settings">⚙ CÀI ĐẶT API</a>
+    </nav>
     <span class="live idle" id="liveBadge"><span class="dot"></span><span id="liveText">ĐANG CHỜ</span></span>
   </header>
   <section class="new-project" id="new-project">
@@ -43,6 +45,7 @@
           <option value="">Đang tải danh mục…</option>
         </select>
       </label>
+      <div class="project-intake" id="project-intake" hidden></div>
       <button class="create-project-button" type="submit">KHỞI TẠO &amp; MỞ BOARD</button>
       <p class="new-project-status" id="new-project-status" role="status"></p>
     </form>

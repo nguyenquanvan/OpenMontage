@@ -22,6 +22,9 @@ let replay = null;          // {t0, t1, t, playing} — replay mode when non-nul
 let firstPaint = true;
 let run = { status: "idle" };
 let appVersion = null;
+let reviewAction = { stage: null, note: "", busy: false, message: "", error: false };
+let assetMaterialization = null;
+let assetMaterializationBusy = false;
 
 function applyTheme(theme) {
   currentTheme = theme === "light" ? "light" : "dark";
@@ -42,6 +45,19 @@ function renderThemeToggle() {
       render();
     },
   }, el("span", { class: "theme-toggle-icon", "aria-hidden": "true" }, currentTheme === "light" ? "☾" : "☀"));
+}
+
+function renderMenuLinks() {
+  return [
+    el("a", { class: "settings-link menu-library", href: "/" }, "⌂ THƯ VIỆN"),
+    el("a", { class: "settings-link menu-create", href: "/#new-project" }, "＋ TẠO DỰ ÁN"),
+    el("a", { class: "settings-link menu-workflows", href: "/#workflows" }, "☰ LUỒNG LÀM VIỆC"),
+    el("a", { class: "settings-link menu-settings", href: "/settings" }, "⚙ CÀI ĐẶT API"),
+  ];
+}
+
+function renderMainMenu() {
+  return el("nav", { class: "main-menu", "aria-label": "Menu chính" }, ...renderMenuLinks());
 }
 
 applyTheme(currentTheme);
@@ -78,6 +94,8 @@ function renderSlate(s) {
   }
 
   const cost = el("div", { class: "cost" });
+  const runBusy = run.status === "starting" || run.status === "running";
+  const runAwaiting = run.status === "awaiting_human";
   if (s.cost) {
     const spent = s.cost.total_spent_usd ?? 0;
     const budget = spent + (s.cost.budget_remaining_usd ?? 0);
@@ -104,14 +122,59 @@ function renderSlate(s) {
     el("button", {
       class: "settings-link primary-link run-button",
       type: "button",
-      disabled: run.status === "starting" || run.status === "running" ? true : null,
+      disabled: runBusy || runAwaiting ? true : null,
       onclick: openRunModal,
-    }, run.status === "starting" || run.status === "running" ? "▶ ĐANG CHẠY" : "▶ BẮT ĐẦU WORKFLOW"),
-    el("a", { class: "settings-link primary-link", href: "/#new-project" }, "＋ TẠO DỰ ÁN"),
-    el("a", { class: "settings-link", href: "/settings" }, "⚙ CÀI ĐẶT API"),
+    }, runBusy ? "▶ ĐANG CHẠY" : runAwaiting ? "◈ CHỜ BẠN DUYỆT" : "▶ BẮT ĐẦU WORKFLOW"),
+    renderMainMenu(),
     renderThemeToggle(),
     liveEl,
     cost,
+  );
+}
+
+function goBackOrHome() {
+  if (history.length > 1) {
+    history.back();
+    return;
+  }
+  location.assign("/");
+}
+
+function renderProjectRecovery(error) {
+  const missing = String(error?.message || error).startsWith("404 ");
+  document.title = `MOSA TOOL ALL — ${missing ? "Không tìm thấy dự án" : "Không mở được dự án"}`;
+  document.body.classList.remove("first");
+  app.innerHTML = "";
+  app.append(
+    el("header", { class: "slate recovery-slate" },
+      el("div", { class: "clapper" }),
+      el("div", { class: "recovery-brand" },
+        el("a", { class: "wordmark", href: "/", style: "text-decoration:none" }, "Backlot"),
+        el("h1", {}, "Điều hướng hệ thống"),
+      ),
+      appVersion ? el("span", {
+        class: "chip app-version",
+        title: `Phiên bản ${appVersion.version} · build ${appVersion.build}`,
+      }, appVersion.label) : null,
+      el("div", { class: "spacer" }),
+      renderMainMenu(),
+      renderThemeToggle(),
+    ),
+    el("main", { class: "recovery-page" },
+      el("section", { class: "recovery-card", role: "alert" },
+        el("span", { class: "recovery-kicker" }, missing ? "PROJECT NOT FOUND" : "PROJECT UNAVAILABLE"),
+        el("h2", {}, missing ? "Không tìm thấy dự án" : "Không mở được dự án"),
+        el("p", {}, missing
+          ? `Dự án “${projectId || "không xác định"}” không tồn tại hoặc đã được di chuyển.`
+          : "App chưa đọc được dữ liệu dự án. Bạn vẫn có thể quay lại các menu chính để tiếp tục."),
+        el("div", { class: "recovery-actions" },
+          el("button", { class: "recovery-button primary", type: "button", onclick: goBackOrHome }, "← QUAY LẠI"),
+          el("a", { class: "recovery-button", href: "/" }, "THƯ VIỆN DỰ ÁN"),
+          el("a", { class: "recovery-button", href: "/#new-project" }, "TẠO DỰ ÁN MỚI"),
+        ),
+        el("p", { class: "recovery-help" }, "Bạn cũng có thể dùng thanh menu phía trên để mở luồng làm việc hoặc cấu hình API."),
+      ),
+    ),
   );
 }
 
@@ -120,7 +183,7 @@ function renderSlate(s) {
 // ---------------------------------------------------------------------------
 
 function stageSub(st) {
-  if (st.status === "awaiting_human") return "chờ bạn duyệt\ntrả lời trong chat để tiếp tục";
+  if (st.status === "awaiting_human") return "chờ bạn duyệt\nduyệt trực tiếp bên dưới";
   if (st.status === "in_progress" && st.stalled) {
     return `có thể bị treo? không có hoạt động ${st.stalled_minutes} phút\nhỏi agent để biết trạng thái`;
   }
@@ -486,9 +549,122 @@ function artifactReviewTitle(name, artifact, s) {
   return artifact.title || artifact.name || s.title;
 }
 
+async function submitApprovalReview(stage, action) {
+  if (reviewAction.busy) return;
+  const note = reviewAction.note.trim();
+  if (action === "revise" && !note) {
+    reviewAction = {
+      ...reviewAction,
+      message: "Hãy ghi rõ nội dung cần chỉnh sửa trước khi gửi.",
+      error: true,
+    };
+    render();
+    return;
+  }
+
+  reviewAction = {
+    ...reviewAction,
+    busy: true,
+    message: action === "approve" ? "Đang lưu phê duyệt…" : "Đang gửi yêu cầu chỉnh sửa…",
+    error: false,
+  };
+  render();
+  try {
+    const response = await fetch(`/api/project/${encodedProjectId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, action, note }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không lưu được quyết định duyệt");
+    reviewAction = {
+      stage,
+      note: "",
+      busy: false,
+      message: result.queued
+        ? "Đã lưu. App sẽ tự tiếp tục khi agent hiện tại dừng."
+        : result.resumed
+          ? "Đã lưu. Workflow đang tiếp tục."
+          : result.completed
+            ? "Đã duyệt. Workflow đã hoàn tất."
+            : result.error || "Đã lưu quyết định duyệt.",
+      error: Boolean(result.error),
+    };
+    await refresh();
+  } catch (error) {
+    reviewAction = {
+      ...reviewAction,
+      busy: false,
+      message: error.message || "Không lưu được quyết định duyệt",
+      error: true,
+    };
+    render();
+  }
+}
+
+async function startAssetMaterialization() {
+  if (assetMaterializationBusy) return;
+  assetMaterializationBusy = true;
+  render();
+  try {
+    const response = await fetch(`/api/project/${encodedProjectId}/assets/materialization`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không bắt đầu tải được tài nguyên");
+    assetMaterialization = result;
+  } catch (error) {
+    assetMaterialization = {
+      ...(assetMaterialization || {}),
+      ui_error: error.message || "Không bắt đầu tải được tài nguyên",
+    };
+  } finally {
+    assetMaterializationBusy = false;
+    render();
+  }
+}
+
+function renderAssetMaterialization() {
+  const info = assetMaterialization || {};
+  const job = info.job || { status: "idle" };
+  const active = ["queued", "downloading"].includes(job.status);
+  const complete = Boolean(info.complete);
+  const ready = Number(info.ready || 0);
+  const total = Number(info.total || 0);
+  const missing = Number(info.missing || 0);
+  const pct = total ? Math.round((ready / total) * 100) : 0;
+  const errors = Array.isArray(job.errors) ? job.errors : [];
+  const statusText = complete
+    ? `Đã kiểm tra đủ ${ready}/${total} file. Có thể duyệt và tiếp tục.`
+    : active
+      ? `Đang tải và kiểm tra ${ready}/${total} file${job.current ? ` · ${job.current}` : ""}.`
+      : `Còn thiếu ${missing}/${total} file thật trên máy. Manifest hoặc đường dẫn web chưa phải tài nguyên dựng.`;
+  return el("div", { class: `asset-materialization${complete ? " complete" : ""}` },
+    el("div", { class: "asset-materialization-copy" },
+      el("b", {}, complete ? "✓ TÀI NGUYÊN ĐÃ SẴN SÀNG" : "⬇ TẢI TÀI NGUYÊN 0 USD"),
+      el("span", {}, statusText),
+      info.ui_error ? el("em", {}, info.ui_error) : null,
+      errors.length ? el("em", {}, `${errors.length} file chưa tải được: ${errors.slice(0, 2).map((item) => item.id).join(", ")}`) : null,
+    ),
+    el("div", { class: "asset-materialization-progress" },
+      el("i", { style: `width:${pct}%` }),
+    ),
+    el("button", {
+      type: "button",
+      disabled: active || assetMaterializationBusy || complete ? true : null,
+      onclick: startAssetMaterialization,
+    }, complete ? "ĐÃ TẢI ĐỦ" : active || assetMaterializationBusy ? "ĐANG TẢI…" : "⬇ TẢI & KIỂM TRA FILE"),
+  );
+}
+
 function renderApprovalReview(s) {
   const awaiting = s.stages.find((item) => item.status === "awaiting_human");
   if (!awaiting) return null;
+  if (reviewAction.stage !== awaiting.name) {
+    reviewAction = { stage: awaiting.name, note: "", busy: false, message: "", error: false };
+  }
 
   const names = artifactNamesForStage(awaiting);
   const entries = names
@@ -499,6 +675,7 @@ function renderApprovalReview(s) {
   const nextStage = stageIndex >= 0 ? s.stages[stageIndex + 1] : null;
   const review = awaiting.review || {};
   const reviewSummary = reviewSummaryText(review);
+  const assetsBlocked = awaiting.name === "assets" && assetMaterialization && !assetMaterialization.complete;
 
   const artifacts = entries.map(([name, artifact]) => el("article", {
     class: "approval-artifact",
@@ -523,13 +700,45 @@ function renderApprovalReview(s) {
       el("div", {},
         el("div", { class: "approval-eyebrow" }, "CỔNG DUYỆT"),
         el("h2", {}, `${humanize(awaiting.name)} đã sẵn sàng để bạn duyệt`),
-        el("p", {}, "Kiểm tra tài liệu tại đây, sau đó trả lời trong chat để duyệt hoặc yêu cầu chỉnh sửa."),
+        el("p", {}, "Kiểm tra tài liệu, ghi chú nếu cần, rồi duyệt hoặc yêu cầu chỉnh sửa ngay tại đây."),
       ),
       el("span", { class: "approval-status" }, "CHỜ DUYỆT"),
     ),
     reviewSummary ? el("div", { class: "approval-review-note" },
       el("b", {}, "TỰ KIỂM TRA  "), shortText(reviewSummary, 260)) : null,
+    awaiting.name === "assets" ? renderAssetMaterialization() : null,
     el("div", { class: "approval-artifacts" }, artifacts),
+    el("div", { class: "approval-actions" },
+      el("label", { class: "approval-feedback-label", for: `review-note-${awaiting.name}` },
+        "GHI CHÚ DUYỆT / NỘI DUNG CẦN SỬA"),
+      el("textarea", {
+        id: `review-note-${awaiting.name}`,
+        class: "approval-feedback",
+        rows: "3",
+        maxlength: "4000",
+        placeholder: "Ví dụ: Đổi tiêu đề, rút ngắn phần mở đầu, dùng phương án 0 USD…",
+        disabled: reviewAction.busy ? true : null,
+        oninput: (event) => { reviewAction.note = event.target.value; },
+      }, reviewAction.note),
+      reviewAction.message ? el("div", {
+        class: `approval-action-status${reviewAction.error ? " error" : ""}`,
+        role: reviewAction.error ? "alert" : "status",
+      }, reviewAction.message) : null,
+      el("div", { class: "approval-action-buttons" },
+        el("button", {
+          class: "approval-revise",
+          type: "button",
+          disabled: reviewAction.busy ? true : null,
+          onclick: () => submitApprovalReview(awaiting.name, "revise"),
+        }, reviewAction.busy ? "ĐANG XỬ LÝ…" : "↺ YÊU CẦU CHỈNH SỬA"),
+        el("button", {
+          class: "approval-approve",
+          type: "button",
+          disabled: reviewAction.busy || assetsBlocked ? true : null,
+          onclick: () => submitApprovalReview(awaiting.name, "approve"),
+        }, reviewAction.busy ? "ĐANG XỬ LÝ…" : assetsBlocked ? "CHƯA ĐỦ FILE ĐỂ DUYỆT" : "✓ DUYỆT & TIẾP TỤC"),
+      ),
+    ),
     el("div", { class: "approval-review-foot" },
       el("span", {}, nextStage
         ? `Duyệt xong sẽ mở khóa ${humanize(nextStage.name)}.`
@@ -578,17 +787,148 @@ function closeModal() { modal.classList.remove("open"); }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
 
-function openRunModal() {
+async function openRunModal() {
   const currentBrief = state && state.brief ? state.brief : "";
+  let agents = [];
+  try {
+    agents = await getJSON("/api/agents");
+  } catch (error) {
+    console.error(error);
+  }
+  const agentByName = new Map(agents.map((item) => [item.name, item]));
+  const nextStage = (state?.stages || []).find((item) => item.status !== "completed")?.name || null;
+  const pipelineType = state?.pipeline?.pipeline_type || null;
+  const ollamaBlockReason = pipelineType === "health-infographic" && nextStage === "research"
+    ? "Pipeline sức khỏe cần nguồn web và trích dẫn kiểm chứng. Dùng Codex/Claude cho nghiên cứu; dùng Ollama cho bước local sau."
+    : pipelineType === "documentary-montage"
+      ? "Pipeline phóng sự cần tìm và tải footage thật từ Pexels, Archive.org, NASA hoặc Wikimedia. Ollama chỉ có tool offline nên không thể hoàn thành luồng này."
+      : null;
+  const ollamaBlocked = Boolean(ollamaBlockReason);
+  const ollama = agentByName.get("ollama") || {
+    name: "ollama", label: "Ollama — miễn phí trên máy", available: false,
+    online: false, models: [], recommended_model: "granite3.3:8b",
+    setup_url: "https://ollama.com/download", detail: "Chưa đọc được trạng thái Ollama.",
+  };
   modal.innerHTML = "";
   const status = el("p", { class: "run-status", role: "status" });
   const submit = el("button", { class: "create-project-button", type: "submit" }, "BẮT ĐẦU AGENT");
+  const modelList = el("datalist", { id: "ollama-model-list" },
+    ...(ollama.models || []).map((modelName) => el("option", { value: modelName })));
+  const modelInput = el("input", {
+    name: "model", type: "text", list: "ollama-model-list", placeholder: "Để agent tự chọn",
+  });
+  const agentSelect = el("select", { name: "agent" },
+    el("option", { value: "auto" }, "Tự chọn (Codex → Claude)"),
+    ...agents.filter((item) => item.name !== "ollama").map((item) => el(
+      "option",
+      { value: item.name },
+      `${item.label}${item.available ? "" : " (chưa cài)"}`,
+    )),
+    el("option", { value: "ollama" },
+      `Ollama Local · 0 USD${ollama.available ? "" : ollama.online ? " · thiếu model" : " · chưa chạy"}`),
+  );
+  const ollamaPanel = el("div", { class: "ollama-agent-panel", hidden: true });
+
+  function renderOllamaPanel() {
+    const selected = agentSelect.value === "ollama";
+    ollamaPanel.hidden = !selected;
+    submit.disabled = selected && ollamaBlocked;
+    if (!selected) return;
+    ollamaPanel.innerHTML = "";
+    if (ollamaBlocked) {
+      const useCodex = el("button", { type: "button", class: "ollama-download-button" }, "DÙNG CODEX — KHUYÊN DÙNG");
+      useCodex.onclick = () => {
+        agentSelect.value = agentByName.get("codex")?.available ? "codex" : "auto";
+        status.textContent = "Đã chuyển sang agent có thể nghiên cứu và trích dẫn nguồn web.";
+        status.className = "run-status success";
+        renderOllamaPanel();
+      };
+      ollamaPanel.append(
+        el("strong", {}, "OLLAMA KHÔNG PHÙ HỢP CHO LUỒNG NÀY"),
+        el("span", {}, ollamaBlockReason),
+        useCodex,
+      );
+      return;
+    }
+    if (ollama.online && (ollama.models || []).length) {
+      ollamaPanel.append(
+        el("strong", {}, "✓ OLLAMA LOCAL SẴN SÀNG"),
+        el("span", {}, `${ollama.models.length} model trên máy · không cần API key · 0 USD/lượt.`),
+      );
+      modelInput.placeholder = `Tự chọn: ${ollama.models[0]}`;
+      return;
+    }
+    if (ollama.online) {
+      const download = el("button", { type: "button", class: "ollama-download-button" },
+        `↓ TẢI ${String(ollama.recommended_model || "granite3.3:8b").toUpperCase()}`);
+      download.onclick = async () => {
+        download.disabled = true;
+        download.textContent = "ĐANG BẮT ĐẦU TẢI…";
+        status.textContent = "Ollama đang tải model. Có thể mất vài phút tùy tốc độ mạng.";
+        status.className = "run-status";
+        try {
+          const response = await fetch("/api/agents/ollama/models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: ollama.recommended_model || "granite3.3:8b" }),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.detail || "Không tải được model Ollama");
+          download.textContent = "ĐANG TẢI MODEL…";
+          const poll = window.setInterval(async () => {
+            if (!modal.classList.contains("open")) {
+              window.clearInterval(poll);
+              return;
+            }
+            try {
+              const latest = await getJSON("/api/agents");
+              const next = latest.find((item) => item.name === "ollama");
+              if (!next) return;
+              Object.assign(ollama, next);
+              if (next.installer?.status === "error") {
+                window.clearInterval(poll);
+                status.textContent = next.installer.detail || "Tải model thất bại.";
+                status.className = "run-status error";
+                renderOllamaPanel();
+              } else if (next.available) {
+                window.clearInterval(poll);
+                status.textContent = "Đã tải model Ollama. Bạn có thể bắt đầu workflow.";
+                status.className = "run-status success";
+                modelList.replaceChildren(...next.models.map((name) => el("option", { value: name })));
+                renderOllamaPanel();
+              }
+            } catch (error) {
+              console.error(error);
+            }
+          }, 2500);
+        } catch (error) {
+          status.textContent = error.message || "Không tải được model Ollama";
+          status.className = "run-status error";
+          download.disabled = false;
+          download.textContent = "THỬ TẢI LẠI";
+        }
+      };
+      ollamaPanel.append(
+        el("strong", {}, "OLLAMA ĐÃ CHẠY · CHƯA CÓ MODEL"),
+        el("span", {}, "Tải model tool-calling miễn phí để agent đọc pipeline và ghi checkpoint."),
+        download,
+      );
+      return;
+    }
+    ollamaPanel.append(
+      el("strong", {}, "CẦN CÀI VÀ MỞ OLLAMA"),
+      el("span", {}, "Ollama là runtime miễn phí chạy model ngay trên máy, không cần API key."),
+      el("a", { href: ollama.setup_url || "https://ollama.com/download", target: "_blank", rel: "noreferrer" },
+        "TẢI OLLAMA CHO WINDOWS / MAC ↗"),
+    );
+  }
+  agentSelect.addEventListener("change", renderOllamaPanel);
   const form = el("form", {
     class: "run-form",
     onsubmit: async (event) => {
       event.preventDefault();
       const brief = form.querySelector("textarea").value.trim();
-      const agent = form.querySelector("select").value;
+      const agent = agentSelect.value;
       const model = form.querySelector("input[name=model]").value.trim();
       const allowAutomation = form.querySelector("input[type=checkbox]").checked;
       if (!brief) {
@@ -598,6 +938,11 @@ function openRunModal() {
       }
       if (!allowAutomation) {
         status.textContent = "Bạn cần xác nhận cho phép agent chạy lệnh tự động.";
+        status.className = "run-status error";
+        return;
+      }
+      if (agent === "ollama" && ollamaBlocked) {
+        status.textContent = ollamaBlockReason;
         status.className = "run-status error";
         return;
       }
@@ -632,17 +977,15 @@ function openRunModal() {
     el("div", { class: "run-form-grid" },
       el("label", {},
         el("span", {}, "Agent"),
-        el("select", { name: "agent" },
-          el("option", { value: "auto" }, "Tự chọn (Codex → Claude)"),
-          el("option", { value: "codex" }, "Codex"),
-          el("option", { value: "claude" }, "Claude Code"),
-        ),
+        agentSelect,
       ),
       el("label", {},
         el("span", {}, "Model (tuỳ chọn)"),
-        el("input", { name: "model", type: "text", placeholder: "Để agent tự chọn" }),
+        modelInput,
+        modelList,
       ),
     ),
+    ollamaPanel,
     el("label", { class: "run-confirm" },
       el("input", { type: "checkbox" }),
       el("span", {}, "Tôi cho phép agent chạy lệnh trong workspace dự án để tạo nội dung và render video."),
@@ -655,6 +998,7 @@ function openRunModal() {
     el("div", { class: "modal-page" }, form),
   );
   modal.classList.add("open");
+  renderOllamaPanel();
   form.querySelector("textarea").focus();
 }
 
@@ -828,10 +1172,12 @@ function sceneCard(s, card) {
     thumb = el("div", { class: "thumb textcard" },
       el("div", { class: "tc-copy" }, (card.narration || card.description || "").slice(0, 48)));
   } else if (card.required_assets.length) {
-    thumb = el("div", { class: "thumb missing" },
+    const assetsStage = (s.stages || []).find((stage) => stage.name === "assets");
+    const assetsFinished = assetsStage?.status === "completed";
+    thumb = el("div", { class: assetsFinished ? "thumb missing" : "thumb spec planned" },
       el("div", { class: "spec-in" },
-        el("span", { class: "warn-ic" }, "⚑"),
-        el("div", { class: "spec-desc" }, "chưa có tài nguyên"),
+        el("span", { class: assetsFinished ? "warn-ic" : "planned-tag" }, assetsFinished ? "⚑" : "◇ SẼ TẠO LOCAL"),
+        el("div", { class: "spec-desc" }, assetsFinished ? "thiếu tài nguyên sau bước tạo" : "tài nguyên dự kiến ở bước tiếp theo"),
         el("div", { class: "spec-shot" }, (card.required_assets[0].description || "").slice(0, 60))));
   } else {
     thumb = el("div", { class: "thumb spec" },
@@ -976,7 +1322,8 @@ function renderAwaitingNotice(s) {
     el("span", { style: "font-size:calc(16px * var(--fs-scale))" }, "◈"),
     el("span", {},
       el("b", {}, `Bước ${trStage(awaiting.name)} đang chờ bạn duyệt. `),
-      "Agent đang tạm dừng tại cổng này — hãy trả lời ", el("b", {}, "trong chat"), " để duyệt hoặc yêu cầu chỉnh sửa."));
+      "Agent đang tạm dừng tại cổng này — dùng các nút ", el("b", {}, "Duyệt & tiếp tục"),
+      " hoặc ", el("b", {}, "Yêu cầu chỉnh sửa"), " ở bên dưới."));
 }
 
 // ---------------------------------------------------------------------------
@@ -1218,25 +1565,33 @@ function normalize(s) {
 }
 
 async function refresh() {
-  const [nextState, nextRun, nextVersion] = await Promise.all([
+  const [nextState, nextRun, nextVersion, nextAssetMaterialization] = await Promise.all([
     getJSON(`/api/project/${encodeURIComponent(projectId)}/state`),
     getJSON(`/api/project/${encodeURIComponent(projectId)}/run`),
     getJSON("/api/version").catch(() => null),
+    getJSON(`/api/project/${encodeURIComponent(projectId)}/assets/materialization`).catch(() => null),
   ]);
   state = normalize(nextState);
   run = nextRun;
   appVersion = nextVersion;
+  assetMaterialization = nextAssetMaterialization;
   render();
 }
 
-refresh().catch((err) => {
-  app.innerHTML = "";
-  app.append(el("div", { class: "empty", style: "margin-top:80px" },
-    el("div", { class: "big" }, "KHÔNG TÌM THẤY DỰ ÁN"),
-    el("div", {}, String(err))));
-});
-// ?static=1 disables the live feed (screenshots, static exports).
-if (!new URLSearchParams(location.search).has("static")) {
-  subscribe(`/api/project/${encodeURIComponent(projectId)}/events`, () => refresh().catch(console.error));
-  window.setInterval(() => refresh().catch(console.error), 3000);
+async function boot() {
+  try {
+    await refresh();
+  } catch (error) {
+    appVersion = await getJSON("/api/version").catch(() => null);
+    renderProjectRecovery(error);
+    return;
+  }
+
+  // ?static=1 disables the live feed (screenshots, static exports).
+  if (!new URLSearchParams(location.search).has("static")) {
+    subscribe(`/api/project/${encodeURIComponent(projectId)}/events`, () => refresh().catch(console.error));
+    window.setInterval(() => refresh().catch(console.error), 3000);
+  }
 }
+
+boot();

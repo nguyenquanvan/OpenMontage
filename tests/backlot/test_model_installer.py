@@ -80,6 +80,21 @@ def test_archive_pack_extracts_and_can_be_uninstalled(tmp_path, monkeypatch):
     assert not (model_root / "archive-pack" / "bin" / "runtime.txt").exists()
 
 
+def test_archive_extract_normalizes_parent_destination_on_windows(tmp_path):
+    """Regression for MuseTalk's ``models/..`` extraction directory."""
+    import zipfile
+
+    archive = tmp_path / "musetalk-source.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("MuseTalk-main/.gitignore", "models/")
+    weights_dir = tmp_path / "musetalk-1.5" / "models"
+
+    extracted = installer._extract_archive(archive, weights_dir / "..")
+
+    assert extracted == [str(Path("MuseTalk-main") / ".gitignore")]
+    assert (tmp_path / "musetalk-1.5" / "MuseTalk-main" / ".gitignore").is_file()
+
+
 def test_catalog_marks_downloaded_weights_that_need_runtime(tmp_path, monkeypatch):
     model_root = tmp_path / "models"
     state_root = tmp_path / "state"

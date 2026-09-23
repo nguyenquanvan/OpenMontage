@@ -8,12 +8,13 @@ reading the pipeline manifest, calling tools, and writing checkpoints.
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -138,6 +139,24 @@ def _fail_active_checkpoint(project_dir: Path, error: str, run: dict[str, Any]) 
 def _pid_alive(pid: Any) -> bool:
     if not isinstance(pid, int) or pid <= 0:
         return False
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == 0x00000102  # WAIT_TIMEOUT
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except (OSError, ProcessLookupError):
@@ -152,6 +171,16 @@ def _refresh_run(project_id: str, project_dir: Path, run: dict[str, Any] | None)
         process = _PROCESSES.get(project_id)
         if process is not None and process.poll() is None:
             return run
+        if run.get("status") == "starting" and not run.get("pid"):
+            try:
+                started = datetime.fromisoformat(run["started_at"])
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                age = datetime.now(timezone.utc) - started
+                if timedelta(seconds=-5) <= age < timedelta(seconds=60):
+                    return run
+            except (KeyError, TypeError, ValueError):
+                pass
         if _pid_alive(run.get("pid")):
             return run
         run = {
@@ -170,10 +199,21 @@ def get_run(project_id: str) -> dict[str, Any]:
     return _refresh_run(project_id, project_dir, _read_json(_run_path(project_dir)))
 
 
+def _agent_executable(name: str) -> str | None:
+    executable = shutil.which(name)
+    if not executable:
+        return None
+    if name == "claude" and sys.platform == "win32" and Path(executable).suffix.lower() in {".cmd", ".bat"}:
+        native = Path(executable).parent / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+        if native.is_file():
+            return str(native)
+    return executable
+
+
 def available_agents() -> list[dict[str, Any]]:
     agents = []
     for name, label in (("codex", "Codex"), ("claude", "Claude Code")):
-        executable = shutil.which(name)
+        executable = _agent_executable(name)
         agents.append({"name": name, "label": label, "available": bool(executable)})
     from backlot.ollama_agent import DEFAULT_MODEL, model_pull_status, ollama_status
 
@@ -213,7 +253,7 @@ def _resolve_agent(requested: str | None) -> tuple[str, str]:
         return "ollama", sys.executable
     candidates = ("codex", "claude") if choice == "auto" else (choice,)
     for name in candidates:
-        executable = shutil.which(name)
+        executable = _agent_executable(name)
         if executable:
             return name, executable
     raise ValueError("Chưa tìm thấy Codex hoặc Claude Code trên máy này")
@@ -358,6 +398,117 @@ def _normalize_legacy_scene_plan(project_dir: Path, artifact: dict[str, Any]) ->
     }
 
 
+def _normalize_legacy_edit_decisions(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Convert agent-authored documentary timeline aliases to the canonical schema."""
+
+    allowed_top_level = {
+        "version", "cuts", "overlays", "audio", "subtitles", "music", "transitions",
+        "renderer_family", "render_runtime", "motionIntensity", "composition_mode",
+        "bespoke", "slideshow_risk_score", "metadata",
+    }
+    cuts = artifact.get("cuts")
+    if not isinstance(cuts, list):
+        return artifact
+    has_alias_cuts = any(
+        isinstance(cut, dict)
+        and not {"id", "source", "in_seconds", "out_seconds"}.issubset(cut)
+        and any(key in cut for key in ("cut_id", "asset_id", "source_in", "source_out"))
+        for cut in cuts
+    )
+    has_extra_top_level = bool(set(artifact) - allowed_top_level)
+    legacy_music = artifact.get("music")
+    has_legacy_music = isinstance(legacy_music, dict) and bool(
+        set(legacy_music) - {"asset_id", "volume", "ducking", "fade_in_seconds", "fade_out_seconds"}
+    )
+    if not has_alias_cuts and not has_extra_top_level and not has_legacy_music:
+        return artifact
+
+    normalized_cuts: list[dict[str, Any]] = []
+    cut_details: list[dict[str, Any]] = []
+    canonical_cut_keys = {
+        "id", "source", "in_seconds", "out_seconds", "speed", "layer", "type", "text",
+        "title", "subtitle", "stat", "sourceLabel", "myth", "reality", "takeaway",
+        "badge", "ingredientImage", "facts", "mechanismNodes", "evidenceLevels",
+        "timelineSteps", "transform", "transition_in", "transition_out",
+        "transition_duration", "motion_intensity", "backgroundColor", "accentColor",
+        "secondaryColor", "reason",
+    }
+    for index, cut in enumerate(cuts):
+        if not isinstance(cut, dict):
+            continue
+        if {"id", "source", "in_seconds", "out_seconds"}.issubset(cut):
+            normalized_cuts.append({key: value for key, value in cut.items() if key in canonical_cut_keys})
+            continue
+        source_in = _number(cut.get("source_in", cut.get("in_seconds")), 0.0)
+        source_out = _number(cut.get("source_out", cut.get("out_seconds")), source_in)
+        if source_out <= source_in:
+            source_out = source_in + max(0.1, _number(cut.get("duration_seconds"), 0.1))
+        normalized_cut: dict[str, Any] = {
+            "id": str(cut.get("cut_id") or cut.get("id") or f"cut_{index + 1:02d}"),
+            "source": str(cut.get("asset_id") or cut.get("source") or cut.get("asset_path") or ""),
+            "in_seconds": source_in,
+            "out_seconds": source_out,
+            "speed": max(0.1, _number(cut.get("speed"), 1.0)),
+            "layer": str(cut.get("layer") or "primary"),
+        }
+        for key in ("transition_in", "transition_out", "transition_duration", "reason"):
+            if cut.get(key) is not None:
+                normalized_cut[key] = cut[key]
+        movement = cut.get("movement")
+        if isinstance(movement, str) and movement:
+            normalized_cut["transform"] = {"position": "center", "animation": movement}
+        normalized_cuts.append(normalized_cut)
+        details = {key: value for key, value in cut.items() if key not in canonical_cut_keys}
+        if details:
+            cut_details.append({"id": normalized_cut["id"], **details})
+
+    metadata = dict(artifact.get("metadata") or {})
+    metadata["normalized_from"] = "documentary_timeline_v1"
+    metadata["target_duration_seconds"] = _number(
+        artifact.get("total_duration_seconds"),
+        sum(max(0.0, _number(cut.get("out_seconds")) - _number(cut.get("in_seconds"))) for cut in normalized_cuts),
+    )
+    for key in (
+        "project_id", "pipeline_type", "body_duration_seconds", "end_tag_mode",
+        "target_platform", "canvas", "frame_rate", "end_tag", "color_grade_lut_map",
+        "transition_vocabulary",
+    ):
+        if artifact.get(key) is not None:
+            metadata[key] = artifact[key]
+    if cut_details:
+        metadata["source_cut_details"] = cut_details
+    if has_legacy_music:
+        metadata["source_music_config"] = legacy_music
+
+    normalized = {
+        key: value
+        for key, value in artifact.items()
+        if key in allowed_top_level and key not in {"cuts", "metadata", "music"}
+    }
+    normalized.update({
+        "version": "1.0",
+        "cuts": normalized_cuts,
+        "metadata": metadata,
+    })
+    if isinstance(legacy_music, dict):
+        volume = legacy_music.get("volume")
+        if volume is None and legacy_music.get("volume_db") is not None:
+            volume = math.pow(10.0, _number(legacy_music.get("volume_db")) / 20.0)
+        music = {
+            "asset_id": str(legacy_music.get("asset_id") or ""),
+            "volume": min(1.0, max(0.0, _number(volume, 0.7))),
+            "ducking": bool(legacy_music.get("ducking", False)),
+            "fade_in_seconds": max(0.0, _number(legacy_music.get("fade_in_seconds"), 0.0)),
+            "fade_out_seconds": max(0.0, _number(legacy_music.get("fade_out_seconds"), 0.0)),
+        }
+        audio = dict(normalized.get("audio") or {})
+        audio["music"] = music
+        normalized["audio"] = audio
+    elif "music" in artifact:
+        normalized["music"] = artifact["music"]
+    return normalized
+
+
 def _normalize_legacy_artifact(
     project_dir: Path,
     name: str,
@@ -365,6 +516,8 @@ def _normalize_legacy_artifact(
 ) -> dict[str, Any]:
     if name == "scene_plan" and not isinstance(artifact.get("scenes"), list):
         return _normalize_legacy_scene_plan(project_dir, artifact)
+    if name == "edit_decisions":
+        return _normalize_legacy_edit_decisions(artifact)
     return artifact
 
 
@@ -666,6 +819,11 @@ def start_run(
 
     env = os.environ.copy()
     env["OPENMONTAGE_PROJECTS_DIR"] = str(state_mod.PROJECTS_DIR)
+    # A frozen Windows GUI process inherits the active ANSI code page unless
+    # explicitly overridden.  The Ollama worker prints Vietnamese status and
+    # error messages, so force UTF-8 for its redirected log stream.
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = os.pathsep.join(
         part for part in (str(REPO_ROOT), env.get("PYTHONPATH", "")) if part
     )

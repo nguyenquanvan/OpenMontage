@@ -20,8 +20,6 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-import imageio_ffmpeg
-
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNTIME_ROOT = ROOT / "packaging" / "runtime"
@@ -150,6 +148,13 @@ def copy_ffmpeg(force: bool) -> dict[str, object]:
     destination.mkdir(parents=True, exist_ok=True)
     executable_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
     target = destination / executable_name
+    if target.is_file() and not force:
+        return {"bundled": True, "filename": executable_name}
+
+    # Import lazily so source checks and builds that reuse a verified bundled
+    # runtime do not need to load imageio's large platform wheel.
+    import imageio_ffmpeg
+
     source = Path(imageio_ffmpeg.get_ffmpeg_exe())
     if force or not target.is_file():
         shutil.copy2(source, target)
@@ -165,6 +170,8 @@ def copy_ffprobe(force: bool) -> dict[str, object]:
     target_name, architecture = target_platform()
     executable_name = "ffprobe.exe" if target_name == "win" else "ffprobe"
     target = destination / executable_name
+    if target.is_file() and not force:
+        return {"bundled": True, "filename": executable_name}
     package = FFPROBE_PACKAGES.get((target_name, architecture))
     if package:
         package_name, version = package

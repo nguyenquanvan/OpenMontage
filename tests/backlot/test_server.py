@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import time
 from pathlib import Path
 
@@ -197,7 +198,8 @@ class TestBacklotServerApi:
         assert fal["configured"] is True
         assert fal["masked"] == "••••1234"
         assert 'FAL_KEY="fal-secret-1234"' in env_path.read_text(encoding="utf-8")
-        assert env_path.stat().st_mode & 0o777 == 0o600
+        if os.name != "nt":
+            assert env_path.stat().st_mode & 0o777 == 0o600
 
         cleared = client.put(
             "/api/settings/providers",

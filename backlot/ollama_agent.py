@@ -345,7 +345,10 @@ class LocalWorkflowTools:
             raise ValueError("File hệ thống phải được cập nhật bằng tool chuyên dụng")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        return {"path": str(target.relative_to(self.project_dir)), "bytes": len(content.encode("utf-8"))}
+        return {
+            "path": target.relative_to(self.project_dir).as_posix(),
+            "bytes": len(content.encode("utf-8")),
+        }
 
     def _available_local_tools(self) -> dict[str, Any]:
         from tools.base_tool import ToolRuntime, ToolStatus

@@ -237,13 +237,16 @@ This makes the tag's fade-out align with the body's closing fade-out
 is shorter than the tag duration, start the tag earlier so it overlaps
 the second-to-last cut as well — this is fine and often looks better.
 
-Record in `edit_decisions.end_tag`:
+Record in `edit_decisions.metadata.end_tag` because the artifact schema keeps
+pipeline-specific extensions inside `metadata`:
 
 ```json
 {
-  "end_tag": {
-    "offset_seconds": 84.5,
-    "notes": "Tag starts at body_duration - tag_duration. Aligns tag fade-out with final cut fade-out."
+  "metadata": {
+    "end_tag": {
+      "offset_seconds": 84.5,
+      "notes": "Tag starts at body_duration - tag_duration. Aligns tag fade-out with final cut fade-out."
+    }
   }
 }
 ```
@@ -259,6 +262,7 @@ Canonical shape for this pipeline:
 {
   "version": "1.0",
   "renderer_family": "documentary-montage",
+  "render_runtime": "remotion",
   "cuts": [
     {
       "id": "cut_01",
@@ -292,10 +296,6 @@ Canonical shape for this pipeline:
       "ducking": false
     }
   },
-  "end_tag": {
-    "offset_seconds": 84.5,
-    "notes": "Tag starts at body_duration - tag_duration. Aligns tag fade-out with final cut fade-out."
-  },
   "metadata": {
     "pipeline": "documentary-montage",
     "tone": "elegiac",
@@ -303,6 +303,10 @@ Canonical shape for this pipeline:
     "total_duration_seconds": 90.0,
     "hold_table_used": { "base": 4.0, "min": 2.5, "max": 7.0 },
     "grade_profile": "warm_film_100",
+    "end_tag": {
+      "offset_seconds": 84.5,
+      "notes": "Tag starts at body_duration - tag_duration. Aligns tag fade-out with final cut fade-out."
+    },
     "reorder_notes": [],
     "diversity_swaps": [
       { "at": "cut_07-cut_08", "reason": "two wide rooftops-in-rain adjacent, swapped 08 for #2 pick" }
@@ -328,6 +332,9 @@ Canonical shape for this pipeline:
 - Every cut has a one-line `reason` — if you can't write one, the
   cut is arbitrary and should be reconsidered.
 - `metadata.total_duration_seconds` matches the sum of cut durations.
+- Validate the final JSON against `edit_decisions.schema.json`. Do not emit aliases
+  such as `cut_id`, `asset_path`, `source_in`, `timeline_in`, or pipeline-specific
+  top-level fields; preserve those details under `metadata` instead.
 
 ## Common Pitfalls
 

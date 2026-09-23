@@ -194,7 +194,7 @@ appears on top of live footage rather than cutting to a black card.
    produces a ProRes 4444 MOV with a real alpha channel
    (pix_fmt=yuva444p12le). Canvas must match body canvas.
 4. Compute the overlay offset:
-   - Read `edit_decisions.end_tag.offset_seconds` if present.
+   - Read `edit_decisions.metadata.end_tag.offset_seconds` if present.
    - Otherwise auto-compute: `offset = body_duration - tag_duration`.
      The tag's fade-out should align with the body's closing fade-out.
 5. Composite via FFmpeg overlay with `-itsoffset`:

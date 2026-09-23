@@ -32,12 +32,23 @@ def _open_stdio_sink() -> Any:
 
 
 def ensure_standard_streams() -> None:
-    """Provide harmless streams for windowed builds without a console."""
+    """Provide UTF-8 streams for windowed builds and Windows worker logs."""
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     for stream_name in ("stdout", "stderr"):
-        if getattr(sys, stream_name) is None:
+        stream = getattr(sys, stream_name)
+        if stream is None:
             sink = _open_stdio_sink()
             _STDIO_SINKS.append(sink)
             setattr(sys, stream_name, sink)
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="backslashreplace")
+            except (OSError, ValueError):
+                # Some redirected or test streams cannot be reconfigured.
+                pass
 
 
 def user_data_dir() -> Path:
@@ -83,6 +94,16 @@ def configure_agent_path() -> None:
         appdata = os.environ.get("APPDATA")
         if appdata:
             candidates.append(Path(appdata) / "npm")
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if local_appdata:
+            local = Path(local_appdata)
+            candidates.append(local / "Microsoft" / "WinGet" / "Links")
+            codex_bin = local / "OpenAI" / "Codex" / "bin"
+            if codex_bin.is_dir():
+                candidates.extend(
+                    path for path in codex_bin.iterdir()
+                    if path.is_dir() and (path / "codex.exe").is_file()
+                )
     current = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
     additions = [str(path) for path in candidates if path.is_dir() and str(path) not in current]
     if additions:

@@ -799,6 +799,10 @@ def _safe_archive_destination(root: Path, member_name: str) -> Path:
 
 
 def _extract_archive(archive: Path, destination: Path) -> list[str]:
+    # ``extract_to`` may intentionally contain ``..`` (MuseTalk keeps its
+    # source checkout beside the weights directory).  Normalize the root once
+    # so Windows Path.relative_to() compares two canonical absolute paths.
+    destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=True)
     extracted: list[str] = []
     if zipfile.is_zipfile(archive):

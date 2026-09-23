@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from backlot import runner as runner_mod
 from backlot import server as server_mod
@@ -37,7 +42,13 @@ def test_start_run_creates_prompt_and_initial_checkpoint(tmp_path, monkeypatch):
         __import__("os").path.normcase(str(projects.resolve())),
     )
     monkeypatch.setattr(runner_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(runner_mod.subprocess, "Popen", lambda *args, **kwargs: _FinishedProcess())
+    popen_kwargs = {}
+
+    def fake_popen(*args, **kwargs):
+        popen_kwargs.update(kwargs)
+        return _FinishedProcess()
+
+    monkeypatch.setattr(runner_mod.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(runner_mod, "_watch_process", lambda *args: None)
 
     async def no_watch():
@@ -73,6 +84,8 @@ def test_start_run_creates_prompt_and_initial_checkpoint(tmp_path, monkeypatch):
     run = json.loads((project / "agent_run.json").read_text(encoding="utf-8"))
     assert run["agent"] == "codex"
     assert run["status"] == "running"
+    assert popen_kwargs["env"]["PYTHONUTF8"] == "1"
+    assert popen_kwargs["env"]["PYTHONIOENCODING"] == "utf-8"
 
 
 def test_start_run_resumes_at_next_incomplete_stage(tmp_path, monkeypatch):
@@ -150,6 +163,43 @@ def test_claude_command_places_prompt_before_variadic_add_dir():
 
     assert command.index(prompt) < command.index("--add-dir")
     assert "--verbose" in command
+
+
+def test_windows_claude_uses_native_binary_instead_of_npm_cmd(tmp_path, monkeypatch):
+    npm_bin = tmp_path / "npm"
+    native = npm_bin / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+    native.parent.mkdir(parents=True)
+    native.touch()
+    monkeypatch.setattr(runner_mod.shutil, "which", lambda name: str(npm_bin / "claude.cmd"))
+    monkeypatch.setattr(runner_mod.sys, "platform", "win32")
+
+    assert runner_mod._agent_executable("claude") == str(native)
+
+
+def test_starting_run_is_not_failed_before_pid_is_recorded(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner_mod, "_pid_alive", lambda pid: False)
+    run = {"project_id": "startup-race", "status": "starting", "started_at": runner_mod._now()}
+
+    result = runner_mod._refresh_run("startup-race", tmp_path, run)
+
+    assert result["status"] == "starting"
+    assert not (tmp_path / runner_mod.RUN_FILENAME).exists()
+
+
+def test_stale_starting_run_is_failed(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner_mod, "_pid_alive", lambda pid: False)
+    started = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+    run = {"project_id": "stale-startup", "status": "starting", "started_at": started}
+
+    result = runner_mod._refresh_run("stale-startup", tmp_path, run)
+
+    assert result["status"] == "failed"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process detection")
+def test_windows_pid_alive_detects_running_and_missing_process():
+    assert runner_mod._pid_alive(os.getpid()) is True
+    assert runner_mod._pid_alive(2_147_483_647) is False
 
 
 def test_resolve_ollama_requires_downloaded_model(monkeypatch):
@@ -677,6 +727,108 @@ def test_review_gate_normalizes_documentary_acts_scene_plan(tmp_path, monkeypatc
     assert len(checkpoint["artifacts"]["scene_plan"]["scenes"]) == 2
     assert checkpoint["artifacts"]["scene_plan"]["metadata"]["slots"][0]["queries"]
     assert persisted == checkpoint["artifacts"]["scene_plan"]
+
+
+def test_review_gate_normalizes_documentary_timeline_edit_decisions(tmp_path, monkeypatch):
+    from lib import checkpoint as checkpoint_mod
+    from schemas.artifacts import validate_artifact
+
+    projects = tmp_path / "projects"
+    project = projects / "legacy-edit-review"
+    artifact_dir = project / "artifacts"
+    artifact_dir.mkdir(parents=True)
+    (project / "project.json").write_text(
+        json.dumps({
+            "project_id": "legacy-edit-review",
+            "title": "Legacy Edit Review",
+            "pipeline_type": "documentary-montage",
+            "brief": "Tạo phóng sự ngắn.",
+        }),
+        encoding="utf-8",
+    )
+    legacy_edit = {
+        "version": "1.0",
+        "project_id": "legacy-edit-review",
+        "pipeline_type": "documentary-montage",
+        "renderer_family": "documentary-montage",
+        "render_runtime": "remotion",
+        "total_duration_seconds": 6,
+        "canvas": "1920x1080",
+        "frame_rate": 24,
+        "cuts": [{
+            "cut_id": "c01",
+            "scene_id": "s01",
+            "asset_id": "asset_s01",
+            "asset_path": "assets/video/s01.mp4",
+            "timeline_in": 0,
+            "timeline_out": 6,
+            "source_in": 1,
+            "source_out": 7,
+            "duration_seconds": 6,
+            "movement": "slow_push_in",
+            "transition_in": "fade_from_black",
+            "transition_out": "fade_to_black",
+            "reason": "Hero opening",
+        }],
+        "music": {
+            "asset_id": "asset_music_bed",
+            "asset_path": "assets/music/bed.mp3",
+            "volume_db": -12,
+            "fade_in_seconds": 1,
+            "fade_out_seconds": 2,
+        },
+        "end_tag": {"offset_seconds": 5, "text": "THE END"},
+        "metadata": {"tone": "reverent"},
+    }
+    edit_path = artifact_dir / "edit_decisions.json"
+    edit_path.write_text(json.dumps(legacy_edit), encoding="utf-8")
+    (project / "checkpoint_edit.json").write_text(
+        json.dumps({
+            "version": "1.0",
+            "project_id": "legacy-edit-review",
+            "pipeline_type": "documentary-montage",
+            "stage": "edit",
+            "status": "awaiting_human",
+            "timestamp": "2026-09-23T00:00:00+00:00",
+            "checkpoint_policy": "guided",
+            "human_approval_required": True,
+            "human_approved": False,
+            "artifacts": {"edit_decisions": "artifacts/edit_decisions.json"},
+        }),
+        encoding="utf-8",
+    )
+    (project / "agent_run.json").write_text(
+        json.dumps({
+            "project_id": "legacy-edit-review",
+            "status": "awaiting_human",
+            "agent": "claude",
+            "brief": "Tạo phóng sự ngắn.",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(state_mod, "PROJECTS_DIR", projects)
+    # This test isolates legacy artifact normalization. Stage prerequisite
+    # enforcement is covered independently by checkpoint contract tests.
+    monkeypatch.setattr(checkpoint_mod, "_enforce_stage_prerequisites", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        runner_mod,
+        "start_run",
+        lambda project_id, **kwargs: {"project_id": project_id, "status": "running"},
+    )
+
+    result = runner_mod.review_gate("legacy-edit-review", stage="edit", action="approve")
+
+    checkpoint = json.loads((project / "checkpoint_edit.json").read_text(encoding="utf-8"))
+    persisted = json.loads(edit_path.read_text(encoding="utf-8"))
+    normalized = checkpoint["artifacts"]["edit_decisions"]
+    validate_artifact("edit_decisions", normalized)
+    assert result["resumed"] is True
+    assert checkpoint["status"] == "completed"
+    assert normalized["cuts"][0]["id"] == "c01"
+    assert normalized["cuts"][0]["source"] == "asset_s01"
+    assert normalized["audio"]["music"]["volume"] < 0.3
+    assert normalized["metadata"]["end_tag"]["text"] == "THE END"
+    assert persisted == normalized
 
 
 def test_review_gate_rejects_asset_manifest_with_missing_files(tmp_path, monkeypatch):

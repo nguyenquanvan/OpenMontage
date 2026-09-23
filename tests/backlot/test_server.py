@@ -102,6 +102,13 @@ class TestBacklotServerApi:
         assert payload["build"]
         assert payload["label"].startswith("v")
 
+    @pytest.mark.parametrize("page", ["/", "/settings", "/p/example"])
+    def test_update_notice_is_available_on_every_desktop_page(self, client, page):
+        response = client.get(page)
+        assert response.status_code == 200
+        assert "/ui/update-banner.js?v=" in response.text
+        assert "/ui/update-banner.css?v=" in response.text
+
     def test_app_update_routes(self, client, monkeypatch):
         monkeypatch.setattr(
             server_mod,

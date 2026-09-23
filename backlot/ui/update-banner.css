@@ -1,0 +1,38 @@
+.mosa-update-banner {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 10px 24px;
+  border-bottom: 1px solid rgba(240, 168, 60, .45);
+  background: #282014;
+  color: #f6e7cd;
+  font: 13px/1.45 Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: center;
+}
+.mosa-update-banner[hidden],
+.mosa-update-banner button[hidden] { display: none; }
+.mosa-update-copy { overflow-wrap: anywhere; }
+.mosa-update-banner button {
+  flex: none;
+  padding: 6px 10px;
+  border: 1px solid #f0a83c;
+  border-radius: 7px;
+  background: #f0a83c;
+  color: #211b12;
+  font: 700 11px/1.3 ui-monospace, monospace;
+  cursor: pointer;
+}
+.mosa-update-banner button:disabled { opacity: .55; cursor: wait; }
+.mosa-update-banner .mosa-update-dismiss {
+  border-color: transparent;
+  background: transparent;
+  color: #f6e7cd;
+  font-size: 20px;
+}
+@media (max-width: 680px) {
+  .mosa-update-banner { flex-wrap: wrap; }
+}

@@ -9,9 +9,9 @@
 
 ## Cập nhật app đã cài
 
-Từ phiên bản `1.6.0`, mở **Cài đặt API → Phiên bản MOSA TOOL ALL → Kiểm tra bản mới**. App đọc GitHub Release mới nhất, tải đúng bộ cài Windows, xác thực bằng `SHA256SUMS.txt`, rồi mở trình cài để thay bản cũ.
+Từ phiên bản `1.6.2`, app tự kiểm tra GitHub Releases khi khởi động và mỗi giờ. Khi có bản mới, app tải đúng bộ cài Windows, xác thực bằng `SHA256SUMS.txt`, rồi chờ workflow đang chạy hoàn tất trước khi cài. Thông báo và tiến độ cập nhật xuất hiện trong thư viện, board và trang Cài đặt API. Bạn vẫn có thể chọn **Cài đặt API → Phiên bản MOSA TOOL ALL → Kiểm tra bản mới** để kiểm tra ngay.
 
-Các bản cũ hơn `1.6.0` cần cài thủ công bản `1.6.0` một lần. Sau đó mới có nút tự cập nhật.
+Trên macOS, app tự tải và xác thực DMG, nhưng bạn cần mở DMG và kéo app vào Applications để hoàn tất. Các bản cũ hơn `1.6.2` cần dùng nút cập nhật thủ công hoặc cài `1.6.2` một lần để bật kiểm tra định kỳ.
 
 ## Phát hành bản mới
 

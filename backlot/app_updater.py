@@ -22,6 +22,7 @@ GITHUB_API_URL = f"https://api.github.com/repos/{UPDATE_REPOSITORY}/releases/lat
 RELEASE_URL = f"https://github.com/{UPDATE_REPOSITORY}/releases/latest"
 CHECKSUM_ASSET_NAME = "SHA256SUMS.txt"
 CACHE_SECONDS = 15 * 60
+AUTO_CHECK_SECONDS = 60 * 60
 _SAFE_ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]+$")
 _lock = threading.Lock()
 _cached_release: tuple[float, dict[str, Any]] | None = None
@@ -30,6 +31,7 @@ _job: dict[str, Any] = {
     "progress": 0,
     "detail": "",
     "asset_name": None,
+    "version": None,
 }
 
 
@@ -194,7 +196,34 @@ def _launch_installer(path: Path) -> None:
     raise RuntimeError("Nền tảng này chưa hỗ trợ cài cập nhật tự động")
 
 
-def _install_worker(release: dict[str, Any], asset: dict[str, Any], checksum_asset: dict[str, Any]) -> None:
+def _workflow_running() -> bool:
+    """Keep the installer from closing a live production run."""
+    from backlot.runner import get_run
+    from backlot.state import PROJECTS_DIR
+
+    if not PROJECTS_DIR.is_dir():
+        return False
+    try:
+        for project in PROJECTS_DIR.iterdir():
+            if project.is_dir() and get_run(project.name).get("status") in {"starting", "running"}:
+                return True
+    except Exception:
+        return True
+    return False
+
+
+def _finish_install(path: Path) -> None:
+    if _platform_name() == "windows":
+        while _workflow_running():
+            _set_job(status="waiting", progress=100, detail="Đã tải bản mới; chờ workflow đang chạy hoàn tất để cài đặt.")
+            time.sleep(5)
+    _set_job(status="launching", progress=100, detail="Đang mở trình cài đặt đã xác thực…")
+    _launch_installer(path)
+    detail = "Đã mở bộ cài. App sẽ khởi động lại sau cập nhật." if _platform_name() == "windows" else "Đã mở DMG; kéo app vào Applications để hoàn tất cập nhật."
+    _set_job(status="launched", progress=100, detail=detail)
+
+
+def _install_worker(release: dict[str, Any], asset: dict[str, Any], checksum_asset: dict[str, Any], automatic: bool) -> None:
     try:
         asset_name = str(asset.get("name") or "")
         if not _SAFE_ASSET_NAME.fullmatch(asset_name):
@@ -205,29 +234,31 @@ def _install_worker(release: dict[str, Any], asset: dict[str, Any], checksum_ass
         checksum_path = release_dir / CHECKSUM_ASSET_NAME
         installer_path = release_dir / asset_name
 
-        _set_job(status="downloading", progress=2, detail="Đang tải chữ ký kiểm tra…", asset_name=asset_name)
+        _set_job(status="downloading", progress=2, detail="Đang tải mã kiểm tra SHA-256…", asset_name=asset_name, version=version)
         _download(str(checksum_asset["browser_download_url"]), checksum_path, progress_start=2, progress_end=5)
         expected = _expected_checksum(checksum_path.read_text(encoding="utf-8"), asset_name)
-        _set_job(status="downloading", progress=5, detail="Đang tải bản cập nhật…")
-        _download(str(asset["browser_download_url"]), installer_path, progress_start=5, progress_end=92)
+        if not installer_path.is_file() or _sha256(installer_path) != expected:
+            _set_job(status="downloading", progress=5, detail="Đang tải bản cập nhật…")
+            _download(str(asset["browser_download_url"]), installer_path, progress_start=5, progress_end=92)
         _set_job(status="verifying", progress=95, detail="Đang kiểm tra SHA-256…")
         if _sha256(installer_path) != expected:
             installer_path.unlink(missing_ok=True)
             raise RuntimeError("SHA-256 không khớp; bản cập nhật đã bị hủy")
-        _set_job(status="launching", progress=100, detail="Đang mở trình cài đặt đã xác thực…")
-        _launch_installer(installer_path)
-        _set_job(status="launched", progress=100, detail="Trình cài đặt đã mở. App có thể tự đóng để cập nhật.")
+        if automatic and _platform_name() != "windows":
+            _set_job(status="ready", progress=100, detail="Đã tải bản mới. Mở DMG để hoàn tất cập nhật trên macOS.")
+        else:
+            _finish_install(installer_path)
     except Exception as exc:
         _set_job(status="error", detail=str(exc), progress=0)
 
 
-def start_update() -> dict[str, Any]:
+def start_update(*, automatic: bool = False) -> dict[str, Any]:
     with _lock:
-        busy = _job["status"] in {"queued", "downloading", "verifying", "launching"}
+        busy = _job["status"] in {"queued", "downloading", "verifying", "waiting", "launching"}
     if busy:
         return update_status()
     try:
-        release = _release_payload(force=True)
+        release = _release_payload(force=not automatic)
     except Exception as exc:
         raise ValueError(f"Không kết nối được GitHub Releases: {exc}") from exc
     latest_version = str(release.get("tag_name") or "").lstrip("v")
@@ -238,7 +269,28 @@ def start_update() -> dict[str, Any]:
     checksum = next((item for item in assets if item.get("name") == CHECKSUM_ASSET_NAME), None)
     if not asset or not checksum:
         raise ValueError("Bản phát hành chưa có bộ cài hoặc SHA-256 phù hợp cho máy này")
-    _set_job(status="queued", progress=0, detail="Đang chuẩn bị tải bản cập nhật…", asset_name=asset.get("name"))
-    thread = threading.Thread(target=_install_worker, args=(release, asset, checksum), name="mosa-app-update", daemon=True)
+    with _lock:
+        already_busy = _job["status"] in {"queued", "downloading", "verifying", "waiting", "launching"}
+        if not already_busy:
+            _job.update(status="queued", progress=0, detail="Đang chuẩn bị tải bản cập nhật…", asset_name=asset.get("name"), version=latest_version)
+    if already_busy:
+        return update_status()
+    thread = threading.Thread(target=_install_worker, args=(release, asset, checksum, automatic), name="mosa-app-update", daemon=True)
     thread.start()
     return update_status()
+
+
+def automatic_update_loop(stop: threading.Event) -> None:
+    """Check installed desktop releases in the background while the app is open."""
+    # Source checkouts and headless smoke tests must never replace an installed app.
+    if not getattr(sys, "frozen", False):
+        return
+    while not stop.is_set():
+        try:
+            status = update_status()
+            job = status["job"]
+            if status["update_available"] and status["install_supported"] and job["status"] in {"idle", "error"}:
+                start_update(automatic=True)
+        except Exception:
+            pass  # A transient offline check will be retried; manual check shows errors.
+        stop.wait(AUTO_CHECK_SECONDS)

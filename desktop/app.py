@@ -221,6 +221,16 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     port = choose_port(args.port)
     server = start_server(port)
+    update_stop = threading.Event()
+    if not args.server_only and getattr(sys, "frozen", False):
+        from backlot.app_updater import automatic_update_loop
+
+        threading.Thread(
+            target=automatic_update_loop,
+            args=(update_stop,),
+            name="mosa-auto-update-check",
+            daemon=True,
+        ).start()
     url = f"http://127.0.0.1:{port}/"
     try:
         if args.server_only:
@@ -234,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 0
     finally:
+        update_stop.set()
         server.should_exit = True
     return 0
 

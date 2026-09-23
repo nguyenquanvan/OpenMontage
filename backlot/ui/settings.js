@@ -34,13 +34,16 @@ async function loadAppVersion() {
 
 function renderUpdate(payload) {
   const job = payload.job || {};
-  const busy = ["queued", "downloading", "verifying", "launching"].includes(job.status);
+  const busy = ["queued", "downloading", "verifying", "waiting", "launching"].includes(job.status);
   checkUpdateButton.disabled = busy;
   installUpdateButton.disabled = busy;
   installUpdateButton.hidden = !payload.update_available || !payload.install_supported;
+  installUpdateButton.textContent = payload.platform === "macos" ? "TẢI VÀ MỞ DMG" : "TẢI VÀ CÀI ĐẶT";
   if (busy) {
-    updateStatus.textContent = `${job.detail || "Đang cập nhật…"} ${job.progress || 0}%`;
+    updateStatus.textContent = `${job.detail || "Đang cập nhật…"} ${job.status === "waiting" ? "" : `${job.progress || 0}%`}`;
   } else if (job.status === "launched") {
+    updateStatus.textContent = job.detail;
+  } else if (job.status === "ready") {
     updateStatus.textContent = job.detail;
   } else if (job.status === "error") {
     updateStatus.textContent = `Lỗi cập nhật: ${job.detail}`;
@@ -80,7 +83,7 @@ checkUpdateButton.addEventListener("click", async () => {
 });
 
 installUpdateButton.addEventListener("click", async () => {
-  if (!window.confirm("Tải bản mới, kiểm tra SHA-256 và mở trình cài đặt? App có thể tự đóng trong lúc cập nhật.")) return;
+  if (!window.confirm("Tải bản mới, kiểm tra SHA-256 và mở trình cài đặt? Trên Windows, app sẽ đợi workflow đang chạy hoàn tất.")) return;
   installUpdateButton.disabled = true;
   updateStatus.textContent = "Đang chuẩn bị bản cập nhật…";
   try {

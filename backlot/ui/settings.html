@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MOSA TOOL ALL — Cài đặt API</title>
 <link rel="stylesheet" href="/ui/settings.css">
+<link rel="stylesheet" href="/ui/update-banner.css">
 </head>
 <body>
 <main class="settings-wrap">
@@ -30,7 +31,7 @@
     <div>
       <span class="section-kicker">APP RELEASE</span>
       <h2>Phiên bản MOSA TOOL ALL</h2>
-      <p>Dùng số phiên bản và mã build này để kiểm tra bạn đang chạy đúng bản mới nhất.</p>
+      <p>App tự kiểm tra bản mới khi khởi động và theo định kỳ. Trên Windows, bản đã xác minh sẽ được cài khi workflow chạy xong; trên macOS, bạn mở DMG để hoàn tất.</p>
     </div>
     <div class="version-value">
       <strong id="app-version">Đang đọc phiên bản…</strong>
@@ -100,5 +101,6 @@
   </form>
 </main>
 <script type="module" src="/ui/settings.js"></script>
+<script type="module" src="/ui/update-banner.js"></script>
 </body>
 </html>

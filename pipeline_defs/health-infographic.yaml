@@ -46,7 +46,7 @@ project_intake:
     - Phân biệt rõ bằng chứng trên người, bằng chứng tiền lâm sàng và giả thuyết.
     - Không chẩn đoán, kê đơn, cam kết điều trị hoặc phóng đại quan hệ nhân quả.
     - Tạo visual nguyên bản: ảnh minh họa, sơ đồ cơ chế, so sánh và thẻ dữ liệu; không sao chép video tham khảo.
-    - Dùng Professional Motion Pack: mechanism flow, evidence ladder, myth/reality, timeline và ingredient spotlight khi phù hợp.
+    - Dùng Professional Motion Pack: mechanism flow, evidence ladder, myth/reality, timeline và ingredient spotlight khi phù hợp với phong cách đã chọn; phong cách Bảng phấn (health-chalkboard) dựng chủ yếu bằng chalk_scene.
     - Nhịp chuyển động theo tỷ lệ 20% cảnh mạnh, 60% cảnh vừa, 20% cảnh nghỉ; không lạm dụng hiệu ứng.
     - Có disclaimer mở đầu hoặc kết video: nội dung chỉ nhằm mục đích giáo dục, không thay thế tư vấn y tế.
   fields:
@@ -76,6 +76,12 @@ project_intake:
           label: "8 phút (giống cấu trúc mẫu)"
         - value: "10"
           label: "10 phút"
+        - value: "15"
+          label: "15 phút"
+        - value: "20"
+          label: "20 phút (một chương video dài)"
+        - value: "25"
+          label: "25 phút"
     - name: language
       label: "Ngôn ngữ"
       type: select

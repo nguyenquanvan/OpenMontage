@@ -829,6 +829,11 @@ phát tiếng báo. Board ghi lý do agent đã tự ghi vào checkpoint thay ch
 Trong form **Bắt đầu workflow**, ô **Ghi chú cho lần chạy này** dùng để trả lời câu hỏi agent để
 lại hoặc đổi một quyết định mà không phải sửa Brief.
 
+Ô **Chạy thẳng đến video cuối** là bạn duyệt trước mọi cổng duyệt của lượt chạy đó. Agent ghi
+quyết định `approval_policy` vào decision_log, tự review từng stage rồi đi tiếp, và chỉ dừng khi
+có lỗi thật, thiếu API, cần vượt ngân sách hoặc cần đổi provider/model. Mặc định ô này tắt, nên
+workflow vẫn dừng ở từng cổng như cũ.
+
 `comfyui_image` dùng FLUX.2 Dev khi máy có đủ ba file của nó. Nếu không, tool tự chuyển sang
 FLUX.1 schnell GGUF (cần custom node ComfyUI-GGUF), bản chạy được trên card 8 GB và được dùng
 thương mại. Mặc định ComfyUI ở `http://127.0.0.1:8188`.
@@ -852,8 +857,12 @@ dung hoặc tài sản của tác giả.
 
 ### Professional Motion Pack
 
-Luồng `health-infographic` có ba phong cách chọn ngay khi tạo dự án:
-`health-editorial-pro`, `health-clinical-3d`, và `health-food-documentary`.
+Luồng `health-infographic` có bốn phong cách chọn ngay khi tạo dự án:
+`health-editorial-pro`, `health-clinical-3d`, `health-food-documentary` và
+`health-chalkboard` (**Bảng phấn**: mỗi ý một tranh phấn trên bảng đen và một câu phấn viết dần,
+scene `chalk_scene`, font Patrick Hand có dấu tiếng Việt). Bảng phấn chạy miễn phí với FLUX.1
+schnell trên ComfyUI và giọng Kokoro `am_michael` cho tiếng Anh; `comfyui_image` và `kokoro_tts`
+nhận `batch` để vẽ hoặc đọc cả chương trong một lần gọi. Thời lượng chọn được tới 25 phút.
 Remotion composer hỗ trợ thêm năm scene dữ liệu chuyển động (`mechanism_flow`,
 `evidence_ladder`, `myth_reality`, `timeline_steps`, `ingredient_spotlight`),
 ba mức motion, và các transition `fade`, `slide`, `wipe`, `iris`, `zoom-through`,

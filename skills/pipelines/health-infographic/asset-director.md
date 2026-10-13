@@ -19,6 +19,7 @@ Use after scene approval to create narration, text-free visuals, diagrams, optio
 - `overlay` text mode: the drawing carries no words; the sentence lives in the `chalk_scene` cut.
 - `in_image` text mode: remove markdown symbols (`*`, `#`, `_`, backticks) from the sentence, then add `Handwritten chalk text across the top of the board reads: "<sentence>"` to the prompt. View every generated image and compare its sentence letter by letter with the script; regenerate a mismatch up to twice, then flag that scene to the user instead of shipping it.
 - Record `chalk_text_mode` and the exact sentence for every image in the asset manifest.
+- Batch the work: draw images with `comfyui_image` `batch` (about 25 per call) and narrate every scene with one `kokoro_tts` `batch` call, instead of one tool call per scene. Look at every image afterwards; local FLUX schnell sometimes adds stray words, a frame, or a chalk tray, so redraw those with a new seed.
 
 ## Quality Checklist
 

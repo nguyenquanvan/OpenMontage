@@ -24,7 +24,7 @@ When the project's style playbook is `health-chalkboard`, every scene is a chalk
 - `overlay` (default, recommend first): the image tool draws text-free chalk drawings and the Remotion `chalk_scene` writes the sentence. Free with local `comfyui_image`, spelling is always right, and Vietnamese diacritics render correctly.
 - `in_image`: `google_imagen` (`gemini-2.5-flash-image`) or `openai_image` draws the sentence on the board itself. Closest to text-in-picture references, but costs every image (about 0.04–0.05 USD each), can misspell, and is unreliable with Vietnamese diacritics. Offer it only for English narration.
 
-Budget one image per 8–15 seconds of narration. `chalk_scene` exists only in Remotion, so recommend Remotion with `composition_mode: "templated"` for this style and say why when presenting both runtimes.
+For English narration recommend the local `kokoro_tts` voice `am_michael` (Apache-2.0, free) at speed 0.95. Budget one image per 8–15 seconds of narration. `chalk_scene` exists only in Remotion, so recommend Remotion with `composition_mode: "templated"` for this style and say why when presenting both runtimes.
 
 ## Approval Packet
 

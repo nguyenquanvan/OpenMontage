@@ -100,9 +100,13 @@ function shiftColor(hex: string, amount: number): string {
   return `rgb(${clamp(r + (255 - r) * amount)}, ${clamp(g + (255 - g) * amount)}, ${clamp(b + (255 - b) * amount)})`;
 }
 
-const AnimatedBackground: React.FC<{ theme: ThemeConfig }> = ({ theme }) => {
-  const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
+const AnimatedBackground: React.FC<{ theme: ThemeConfig; offset?: number }> = ({
+  theme,
+  offset = 0,
+}) => {
+  // Mounted inside a Sequence; `offset` keeps the motion on the absolute timeline.
+  const frame = useCurrentFrame() + offset;
+  const { fps } = useVideoConfig();
 
   const bg = theme.backgroundColor;
   const primary = theme.primaryColor;
@@ -197,6 +201,26 @@ const AnimatedBackground: React.FC<{ theme: ThemeConfig }> = ({ theme }) => {
     </AbsoluteFill>
   );
 };
+
+// Cut types that paint every pixel. The animated background under them is
+// invisible but its blurred orbs still cost a full repaint per frame (most of
+// the render time of a chalkboard video), so it is mounted only elsewhere.
+const OPAQUE_CUT_TYPES = new Set(["chalk_scene"]);
+
+function backgroundRanges(cuts: Cut[], fps: number, total: number): Array<[number, number]> {
+  const covered = cuts
+    .filter((cut) => cut.type && OPAQUE_CUT_TYPES.has(cut.type) && (cut.source || cut.text))
+    .map((cut): [number, number] => [Math.round(cut.in_seconds * fps), Math.round(cut.out_seconds * fps)])
+    .sort((a, b) => a[0] - b[0]);
+  const ranges: Array<[number, number]> = [];
+  let cursor = 0;
+  for (const [start, end] of covered) {
+    if (start > cursor) ranges.push([cursor, start]);
+    cursor = Math.max(cursor, end);
+  }
+  if (cursor < total) ranges.push([cursor, total]);
+  return ranges;
+}
 
 // ---------------------------------------------------------------------------
 // Types — aligned with edit_decisions artifact schema
@@ -965,8 +989,12 @@ export const Explainer: React.FC<ExplainerProps> = (props) => {
 
   return (
     <AbsoluteFill style={{ background: theme.backgroundColor, fontFamily: theme.headingFont || fontFamily }}>
-      {/* Layer 0: Animated gradient background — driven by theme */}
-      <AnimatedBackground theme={theme} />
+      {/* Layer 0: Animated gradient background — driven by theme, skipped under opaque cuts */}
+      {backgroundRanges(cuts, fps, durationInFrames).map(([start, end]) => (
+        <Sequence key={`bg-${start}`} from={start} durationInFrames={end - start}>
+          <AnimatedBackground theme={theme} offset={start} />
+        </Sequence>
+      ))}
 
       {/* Layer 1: Visual scenes */}
       {cuts.map((cut) => {

@@ -77,9 +77,17 @@ class KokoroTTS(ManagedLocalModel):
     capabilities = ["text_to_speech", "english_tts"]
     best_for = ["fast local English narration", "offline drafts"]
     install_instructions = "Cài Kokoro 82M trong Model Center"
-    input_schema = {"type": "object", "required": ["text", "output_path"], "properties": {
+    input_schema = {"type": "object", "anyOf": [{"required": ["text", "output_path"]}, {"required": ["batch"]}], "properties": {
         "text": {"type": "string"}, "output_path": {"type": "string"}, "voice": {"type": "string"},
         "language": {"type": "string", "default": "a"},
+        "speed": {"type": "number", "default": 1.0, "description": "1.0 is normal; 0.9–0.95 suits calm narration."},
+        "batch": {
+            "type": "array",
+            "description": "Many narration segments in one call (one model load), e.g. every scene of a chapter.",
+            "items": {"type": "object", "required": ["text", "output_path"], "properties": {
+                "text": {"type": "string"}, "output_path": {"type": "string"},
+            }},
+        },
     }}
     resource_profile = ResourceProfile(cpu_cores=4, ram_mb=4096, disk_mb=1500)
 

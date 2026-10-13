@@ -53,17 +53,38 @@ def vieneu_tts(data: dict) -> None:
 def kokoro_tts(data: dict) -> None:
     import numpy as np
     import soundfile as sf
-    from kokoro import KPipeline
+    from kokoro import KModel, KPipeline
 
-    candidates = {"lang_code": data.get("language", "a"), "repo_id": data["model_dir"]}
-    pipeline = _construct(KPipeline, candidates)
-    chunks = [audio for _, _, audio in pipeline(data["text"], voice=data.get("voice", "af_heart"))]
-    if not chunks:
-        raise RuntimeError("Kokoro did not produce audio")
-    output = Path(data["output_path"])
-    output.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(output, np.concatenate(chunks), 24000)
-    _result(output=str(output), voice=data.get("voice", "af_heart"), sample_rate=24000)
+    # repo_id must stay a Hugging Face id; the weights and voices come from the
+    # Model Center folder, so nothing is fetched at run time.
+    model_dir = Path(data["model_dir"])
+    model = KModel(
+        repo_id="hexgrad/Kokoro-82M",
+        config=str(model_dir / "config.json"),
+        model=str(model_dir / "kokoro-v1_0.pth"),
+    ).eval()
+    pipeline = KPipeline(lang_code=data.get("language", "a"), repo_id="hexgrad/Kokoro-82M", model=model)
+    voice_name = data.get("voice", "af_heart")
+    local_voice = model_dir / "voices" / f"{voice_name}.pt"
+    voice = str(local_voice) if local_voice.is_file() else voice_name
+    speed = float(data.get("speed", 1.0))
+
+    def speak(text: str, output_path: str) -> dict:
+        chunks = [audio for _, _, audio in pipeline(text, voice=voice, speed=speed)]
+        if not chunks:
+            raise RuntimeError(f"Kokoro did not produce audio for {output_path}")
+        audio = np.concatenate(chunks)
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(output, audio, 24000)
+        return {"output": str(output), "duration_seconds": round(len(audio) / 24000, 3)}
+
+    if data.get("batch"):
+        # One model load for the whole chapter instead of one per scene.
+        outputs = [speak(item["text"], item["output_path"]) for item in data["batch"]]
+        _result(outputs=outputs, voice=voice_name, sample_rate=24000)
+        return
+    _result(**speak(data["text"], data["output_path"]), voice=voice_name, sample_rate=24000)
 
 
 def mlx_transcribe(data: dict) -> None:

@@ -191,7 +191,14 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
             DownloadFile(_hf_url("hexgrad/Kokoro-82M", "voices/bf_emma.pt"), "voices/bf_emma.pt", 523_420),
             DownloadFile(_hf_url("hexgrad/Kokoro-82M", "voices/bm_george.pt"), "voices/bm_george.pt", 523_430),
         ),
-        "runtime_packages": ("kokoro>=0.9.4", "soundfile"),
+        # misaki's English G2P needs this spaCy model; without it the first
+        # narration tries to download it at run time.
+        "runtime_packages": (
+            "kokoro>=0.9.4",
+            "soundfile",
+            "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/"
+            "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+        ),
         "settings": {"KOKORO_MODEL_DIR": "{target}"},
     },
     "realesrgan": {

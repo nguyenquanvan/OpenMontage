@@ -53,7 +53,10 @@ def run_model_worker(
         data = json.loads(lines[-1]) if lines else {}
     except json.JSONDecodeError:
         data = {"stdout": result.stdout.strip()}
-    artifacts = [data["output"]] if data.get("output") else []
+    if data.get("output"):
+        artifacts = [data["output"]]
+    else:
+        artifacts = [item["output"] for item in data.get("outputs") or [] if item.get("output")]
     return ToolResult(
         success=True,
         data=data,

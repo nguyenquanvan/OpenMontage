@@ -114,3 +114,54 @@ def test_professional_motion_cut_validates_as_edit_decisions() -> None:
             ],
         },
     )
+
+
+def test_chalkboard_style_is_offered_and_composes_as_chalk_scenes() -> None:
+    intake = load_pipeline("health-infographic")["project_intake"]
+    fields = {field["name"]: field for field in intake["fields"]}
+    styles = {option["value"] for option in fields["visual_style"]["options"]}
+    assert "health-chalkboard" in styles
+
+    playbook = load_playbook("health-chalkboard")
+    assert playbook["asset_generation"]["scene_type"] == "chalk_scene"
+    assert playbook["typography"]["headings"]["font"] == "Patrick Hand"
+    assert "embedded text" in playbook["asset_generation"]["image_negative_prompt"]
+    assert any("source_ref" in rule for rule in playbook["quality_rules"])
+
+
+def test_chalk_scene_is_registered_and_loads_a_vietnamese_font() -> None:
+    explainer = (ROOT / "remotion-composer" / "src" / "Explainer.tsx").read_text(encoding="utf-8")
+    scene_docs = (ROOT / "remotion-composer" / "SCENE_TYPES.md").read_text(encoding="utf-8")
+    component = (
+        ROOT / "remotion-composer" / "src" / "components" / "ChalkScene.tsx"
+    ).read_text(encoding="utf-8")
+    assert 'cut.type === "chalk_scene"' in explainer
+    assert "`chalk_scene`" in scene_docs
+    assert '"vietnamese"' in component
+
+
+def test_chalk_scene_cut_validates_as_edit_decisions() -> None:
+    validate_artifact(
+        "edit_decisions",
+        {
+            "version": "1.0",
+            "render_runtime": "remotion",
+            "renderer_family": "explainer-data",
+            "composition_mode": "templated",
+            "cuts": [
+                {
+                    "id": "chalk-1",
+                    "source": "projects/demo/assets/images/chalk-1.png",
+                    "type": "chalk_scene",
+                    "in_seconds": 0,
+                    "out_seconds": 9,
+                    "text": "Sau 60 tuổi, cơ bắp giảm khoảng 3% mỗi năm",
+                    "highlightWords": ["3%"],
+                    "badge": "5",
+                    "sourceLabel": "Harvard Health, 2026",
+                    "transform": {"animation": "zoom-in"},
+                    "transition_in": "fade",
+                }
+            ],
+        },
+    )

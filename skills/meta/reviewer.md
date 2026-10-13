@@ -332,7 +332,7 @@ The templated→atelier inversion (`AGENT_GUIDE.md` → "Composition Authoring M
 1. `edit_decisions.composition_mode` must equal `"atelier"` and `edit_decisions.bespoke.{entry, composition_id, art_direction}` must all be set.
    - Missing any of `entry`/`composition_id`: **CRITICAL** — "Atelier compose contract incomplete; render will be rejected by `_render_via_atelier`."
    - Missing `art_direction`: **CRITICAL** — "Atelier without an art-direction declaration; reviewer cannot evaluate distinctness."
-2. Any presence of stock `cut.type` scene-types (`text_card`, `stat_card`, `bar_chart`, `kpi_grid`, `callout`, `comparison`, `hero_title`, `terminal_scene`, `anime_scene`, `progress_bar`, `pie_chart`, `line_chart`) in `edit_decisions.cuts`: **CRITICAL** — "Atelier piece reaches for stock cut.type {name}. Hand-author the scene; the stock registry is a mechanics codex, not a parts bin (`skills/meta/bespoke-composition.md`)."
+2. Any presence of stock `cut.type` scene-types (`text_card`, `stat_card`, `bar_chart`, `kpi_grid`, `callout`, `comparison`, `hero_title`, `terminal_scene`, `anime_scene`, `chalk_scene`, `progress_bar`, `pie_chart`, `line_chart`) in `edit_decisions.cuts`: **CRITICAL** — "Atelier piece reaches for stock cut.type {name}. Hand-author the scene; the stock registry is a mechanics codex, not a parts bin (`skills/meta/bespoke-composition.md`)."
 
 ### At compose stage (when composition_mode == "atelier"):
 1. The compose stage's `final_review.checks.atelier` block must exist. If absent: **CRITICAL** — "Atelier render skipped doctrine checks — `_render_via_atelier` returned without `atelier` checks; investigate tool wiring."

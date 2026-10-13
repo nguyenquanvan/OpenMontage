@@ -9,7 +9,7 @@ stability: beta
 default_checkpoint_policy: guided
 compatible_playbooks:
   recommended: [health-editorial-pro]
-  also_works: [health-clinical-3d, health-food-documentary, health-editorial]
+  also_works: [health-clinical-3d, health-food-documentary, health-chalkboard, health-editorial]
   custom_allowed: true
 
 reference_input:
@@ -104,6 +104,8 @@ project_intake:
           label: "Clinical 3D — khoa học hiện đại"
         - value: "health-food-documentary"
           label: "Food documentary — ấm và tự nhiên"
+        - value: "health-chalkboard"
+          label: "Bảng phấn — tranh vẽ phấn trên bảng đen"
     - name: motion_intensity
       label: "Cường độ chuyển động"
       type: select

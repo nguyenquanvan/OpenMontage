@@ -30,7 +30,7 @@
               "terminal_scene", "screenshot_scene", "bar_chart", "line_chart",
               "pie_chart", "kpi_grid", "progress_bar", "anime_scene",
               "mechanism_flow", "evidence_ladder", "myth_reality",
-              "timeline_steps", "ingredient_spotlight"
+              "timeline_steps", "ingredient_spotlight", "chalk_scene"
             ]
           },
           "text": { "type": "string" },
@@ -42,6 +42,12 @@
           "reality": { "type": "string" },
           "takeaway": { "type": "string" },
           "badge": { "type": "string" },
+          "highlightWords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "maxItems": 6,
+            "description": "chalk_scene: single words of `text` drawn in the accent chalk and underlined."
+          },
           "ingredientImage": { "type": "string" },
           "facts": {
             "type": "array",

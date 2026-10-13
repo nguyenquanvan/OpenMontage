@@ -17,6 +17,15 @@ Query `video_compose.get_info()["render_engines"]`. When both are available, **p
 
 Do not silently default. Recommend one, wait for approval, then write a `render_runtime_selection` decision with the approved `render_runtime`. Also lock `composition_mode` (`templated` or `atelier`).
 
+## Chalkboard Style (`health-chalkboard`)
+
+When the project's style playbook is `health-chalkboard`, every scene is a chalk drawing on a dark board with one chalk sentence. Lock the chalk text mode in the proposal and log it as `decision_log` `category: "playbook_selection"`, `subject: "Chalk text mode"`:
+
+- `overlay` (default, recommend first): the image tool draws text-free chalk drawings and the Remotion `chalk_scene` writes the sentence. Free with local `comfyui_image`, spelling is always right, and Vietnamese diacritics render correctly.
+- `in_image`: `google_imagen` (`gemini-2.5-flash-image`) or `openai_image` draws the sentence on the board itself. Closest to text-in-picture references, but costs every image (about 0.04–0.05 USD each), can misspell, and is unreliable with Vietnamese diacritics. Offer it only for English narration.
+
+Budget one image per 8–15 seconds of narration. `chalk_scene` exists only in Remotion, so recommend Remotion with `composition_mode: "templated"` for this style and say why when presenting both runtimes.
+
 ## Approval Packet
 
 - Present at least one low-cost/local path and one quality-first path when available.

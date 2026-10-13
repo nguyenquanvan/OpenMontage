@@ -23,6 +23,8 @@ Use to convert the approved scene and asset plans into deterministic edit decisi
 - `myth_reality` requires `myth` and `reality`; use `takeaway` only when the source supports it.
 - `timeline_steps` requires `timelineSteps` with 2–6 `{label, detail?, time?}` entries.
 - `ingredient_spotlight` requires `title`; use `ingredientImage` or `source`, plus up to four `facts`.
+- `chalk_scene` requires `source` (the chalk drawing) or `text`; optional `highlightWords` (up to six single words of `text`), `badge`, `sourceLabel`, and `transform.animation` (`zoom-in` default, `zoom-out`, `pan-left`, `pan-right`, `static`). In `in_image` text mode omit `text`, because the drawing already carries the sentence.
+- For `health-chalkboard`, leave word-by-word `captions` off unless the user asks: the chalk sentence is the on-screen text. Use only the `fade` and `wipe-left` transition families.
 - Set `sourceLabel` for every scene that communicates a factual health claim.
 - Map project intake ratio to the render profile: `16:9` → `youtube_landscape`, `9:16` → `youtube_shorts`, `1:1` → `instagram_feed`; pass that profile to `video_compose` without changing it silently.
 

@@ -22,6 +22,19 @@ Use these deterministic Remotion `cut.type` values where they improve understand
 
 Plan motion rhythm across the full video: about 20% strong motion for hero moments, 60% medium explanatory motion, and 20% quiet reading/rest scenes. Select no more than three transition families from `fade`, `slide-left`, `slide-right`, `slide-up`, `wipe-left`, `iris`, `zoom-through`, and `light-sweep`. Reserve `zoom-through`, `iris`, and `light-sweep` for section peaks.
 
+## Chalkboard Style (`health-chalkboard`)
+
+This style replaces the alternating visual grammar above:
+
+- One scene per narration idea, 8–15 seconds each. Default `cut.type` is `chalk_scene`.
+- `text` is the scene's chalk sentence: at most 14 words, taken from that scene's narration, digits for numbers, and no markdown, asterisks, hashes or emoji.
+- `highlightWords` marks up to three single words of `text` (the key number or term).
+- Countdown items set `badge` to the numeral ("5" … "1") on the scene that names the item.
+- Section titles and key terms may be sentence-only chalk cards (no image), at most one scene in six.
+- Professional Motion Pack types stay allowed for genuine data or mechanisms; they inherit the chalk theme. Keep them under one scene in five.
+- Each image brief names one concrete subject (a bowl of Greek yogurt, a thigh muscle cross-section, a grip dynamometer) plus simple arrows or circles. In `overlay` text mode the brief contains no words to draw.
+- Recurring people are generic figures, never named patients or an invented doctor.
+
 ## Reference Handling
 
 Translate reference observations into general properties such as warm cream backgrounds, restrained motion, and image-text layouts. Do not recreate distinctive frames, thumbnails, wording, or shot order.

@@ -60,6 +60,7 @@ The Explainer composition supports the following cut types:
 | `kpi_grid` | `chartData` [{label, value, prefix, suffix, change, icon}] | Dashboards, traction metrics |
 | `progress_bar` | `progress` (0-100), optional `progressSegments` | Journey viz, completion, stacked metrics |
 | `anime_scene` | `images` (1-4 paths), optional `animation`, `particles`, `particleColor`, `particleCount`, `particleIntensity`, `vignette`, `lightingFrom`, `lightingTo` | Anime/Ghibli-style scenes with multi-image crossfade, camera motion, particle overlays |
+| `chalk_scene` | `source` (chalk drawing) and/or `text`, optional `highlightWords`, `badge`, `sourceLabel`, `transform.animation` | Chalkboard explainers: one chalk drawing plus one chalk sentence written on word by word |
 
 **Chart animations:** `grow-up`, `slide-in`, `pop` (bar), `draw`, `fade-in` (line), `spin`, `expand`, `sequential` (pie), `count-up`, `pop`, `cascade` (kpi)
 

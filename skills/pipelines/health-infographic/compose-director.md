@@ -16,6 +16,7 @@ Read `edit_decisions.render_runtime` and route without substitution. For `remoti
 4. Check text overflow, citation legibility, subtitle safe areas, chart labels, visual-source alignment, and pronunciation against the transcript.
 5. Write `render_report` and `final_review`; do not hide warnings.
 6. Inspect at least one frame from every Professional Motion Pack scene type used and verify transitions at the scene boundaries.
+7. For `chalk_scene`, inspect a frame after the sentence finishes writing: the sentence is complete, legible, and clear of the drawing; in `in_image` mode, also check its spelling against the script.
 
 ## Quality Checklist
 

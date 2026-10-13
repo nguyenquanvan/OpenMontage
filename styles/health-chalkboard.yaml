@@ -1,0 +1,92 @@
+identity:
+  name: "Health Chalkboard"
+  category: whiteboard
+  mood: calm, teacherly, trustworthy, evidence-led
+  pace: moderate
+  best_for: "Long-form health explainers drawn as chalk illustrations on a dark classroom blackboard, one drawing and one chalk sentence per narration idea"
+
+visual_language:
+  color_palette:
+    primary: ["#9CC9E8", "#7FB3D5"]
+    accent: ["#F2D16B", "#E88A7E"]
+    background: "#23272A"
+    text: "#F4F1E8"
+    muted: "#A9ADA8"
+  composition: "one hand-drawn chalk illustration per idea in the lower board, one chalk sentence across the top, generous empty slate, simple arrows, circled numbers and underlines"
+  texture: "matte slate blackboard, soft chalk-dust smudges, slightly uneven hand-drawn strokes"
+
+typography:
+  headings:
+    font: "Patrick Hand"
+    weight: 400
+  body:
+    font: "Patrick Hand"
+    weight: 400
+    line_height: 1.25
+  stat_card:
+    font: "Patrick Hand"
+    weight: 400
+    size_multiplier: 2.6
+  scale_system: "perfect_fourth"
+
+motion:
+  transitions: [fade, wipe-left]
+  animation_style: "chalk sentence written on word by word, then a slow push-in on the drawing; countdown numerals appear with a soft settle"
+  pacing_rules:
+    min_scene_hold_seconds: 6
+    max_scene_hold_seconds: 16
+    text_card_hold_seconds: 4
+    stat_card_hold_seconds: 4
+    transition_duration_seconds: 0.5
+  entrance: "sentence first, drawing fades up under it; no bounce"
+  exit: "short crossfade, or a left wipe like an eraser at section changes"
+
+audio:
+  voice_style: "calm, warm, unhurried teacher; plain words, short pauses after each key number"
+  music_mood: "quiet soft piano or ambient pad, barely noticeable"
+  music_volume: 0.06
+  sfx_style: "none, or a very soft chalk tap when a countdown numeral appears"
+  ducking_threshold_db: -4
+
+asset_generation:
+  scene_type: "chalk_scene"
+  image_prompt_prefix: "white and pastel chalk drawing on a dark slate classroom blackboard, hand-drawn line art with light chalk shading, visible chalk-dust texture, one clear subject centered with empty board around it, simple educational illustration, "
+  image_negative_prompt: "embedded text, letters, words, labels, numbers, captions, watermark, logo, photograph, photorealistic, 3d render, glossy, white background, paper, frame border, medical gore, surgery, fearmongering, miracle cure, distorted anatomy, clutter"
+  diagram_style: "chalk-white lines and arrows; chalk yellow marks the active step, chalk blue the supporting states; every label is written by the composition engine in Patrick Hand"
+  consistency_anchors:
+    - "Slate #23272A board with white chalk #F4F1E8 lines in every scene"
+    - "Chalk yellow #F2D16B only for the key number or the active step"
+    - "One drawing and at most one chalk sentence per scene; the sentence comes from the narration"
+    - "Generated drawings contain no text in the default overlay mode; the chalk_scene writes the sentence"
+    - "Use no more than two transition families in one video"
+
+overlays:
+  stat_card:
+    bg: "#2C3135"
+    border: "#F2D16B"
+    radius: 8
+  key_term:
+    bg: "#2C3135"
+    text: "#F4F1E8"
+    radius: 6
+  section_title:
+    bg: "#2C3135"
+    text: "#F4F1E8"
+    radius: 6
+
+quality_rules:
+  - "Every medical or nutrition claim shown on screen has a source_ref"
+  - "Use association language unless the cited evidence supports causation"
+  - "No invented doctor persona, patient names or testimonials"
+  - "Each chalk sentence is at most 14 words, comes from the narration, and carries no markdown symbols such as ** or #"
+  - "In in_image text mode, read every generated sentence against the script and regenerate any misspelled image"
+  - "Keep each chalk sentence on screen for at least 3 seconds after it finishes writing"
+  - "Minimum text contrast ratio 4.5:1"
+  - "End with a visible educational-use medical disclaimer"
+
+chart_palette: ["#F4F1E8", "#F2D16B", "#9CC9E8", "#E88A7E"]
+
+color_rules:
+  harmony_type: complementary
+  contrast_validation: true
+  colorblind_safe: true

@@ -25,6 +25,7 @@ import { StatReveal } from "./components/StatReveal";
 import { HeroTitle } from "./components/HeroTitle";
 import { AnimeScene } from "./components/AnimeScene";
 import type { CameraMotion } from "./components/AnimeScene";
+import { ChalkScene } from "./components/ChalkScene";
 import { TerminalScene } from "./components/TerminalScene";
 import type { TerminalStep } from "./components/TerminalScene";
 import { ScreenshotScene } from "./components/ScreenshotScene";
@@ -295,6 +296,8 @@ interface Cut {
   facts?: string[];
   badge?: string;
   secondaryColor?: string;
+  // Chalk scene props (type: "chalk_scene")
+  highlightWords?: string[];
 }
 
 interface Overlay {
@@ -822,6 +825,23 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
         sourceLabel={cut.sourceLabel}
         backgroundColor={bgColor || theme.backgroundColor}
         textColor={textColor}
+        accentColor={accent}
+      />
+    );
+  }
+
+  // --- Chalk scene (chalk drawing + sentence written on a dark board) ---
+  if (cut.type === "chalk_scene" && (cut.source || cut.text)) {
+    return (
+      <ChalkScene
+        image={cut.source || undefined}
+        text={cut.text}
+        highlightWords={cut.highlightWords}
+        badge={cut.badge}
+        sourceLabel={cut.sourceLabel}
+        animation={cut.animation || cut.transform?.animation}
+        boardColor={cut.backgroundColor || theme.backgroundColor}
+        chalkColor={textColor}
         accentColor={accent}
       />
     );

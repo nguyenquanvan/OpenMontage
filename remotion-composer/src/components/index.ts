@@ -10,6 +10,7 @@ export { StatReveal } from "./StatReveal";
 export { HeroTitle } from "./HeroTitle";
 export { ParticleOverlay } from "./ParticleOverlay";
 export { AnimeScene } from "./AnimeScene";
+export { ChalkScene } from "./ChalkScene";
 export { TerminalScene } from "./TerminalScene";
 export { ScreenshotScene } from "./ScreenshotScene";
 export { ProviderChip } from "./ProviderChip";
@@ -29,5 +30,6 @@ export type {
 } from "./pro-motion";
 export type { ParticleType } from "./ParticleOverlay";
 export type { CameraMotion, AnimeSceneProps } from "./AnimeScene";
+export type { ChalkSceneProps } from "./ChalkScene";
 export type { TerminalStep } from "./TerminalScene";
 export type { ScreenshotStep, Region, Point } from "./ScreenshotScene";

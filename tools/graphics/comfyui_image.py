@@ -128,9 +128,29 @@ class ComfyUIImage(BaseTool):
 
     input_schema = {
         "type": "object",
-        "required": ["prompt"],
+        "anyOf": [{"required": ["prompt"]}, {"required": ["batch"]}],
         "properties": {
             "prompt": {"type": "string", "description": "Text prompt for image generation"},
+            "batch": {
+                "type": "array",
+                "description": (
+                    "Many images in one call, e.g. every scene of a chapter. Each item needs prompt "
+                    "and output_path and may set seed, width, height; top-level width, height and "
+                    "steps apply to items that omit them. Keep a call to about 25 images so it ends "
+                    "within agent command timeouts."
+                ),
+                "items": {
+                    "type": "object",
+                    "required": ["prompt", "output_path"],
+                    "properties": {
+                        "prompt": {"type": "string"},
+                        "output_path": {"type": "string"},
+                        "seed": {"type": "integer"},
+                        "width": {"type": "integer"},
+                        "height": {"type": "integer"},
+                    },
+                },
+            },
             "width": {"type": "integer", "default": 1024},
             "height": {"type": "integer", "default": 1024},
             "steps": {"type": "integer", "default": 20},
@@ -217,6 +237,8 @@ class ComfyUIImage(BaseTool):
         return info
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        if inputs.get("batch"):
+            return self._execute_batch(inputs)
         custom_workflow = bool(inputs.get("workflow_json") or inputs.get("workflow_path"))
         if custom_workflow and not inputs.get("output_node"):
             return ToolResult(
@@ -296,8 +318,10 @@ class ComfyUIImage(BaseTool):
             provenance = self._workflow_provenance(
                 inputs, custom_workflow, output_node, workflow, stack, schnell
             )
+            # A schnell image takes ~16 s, so the default 5 s REST poll (used when
+            # websocket-client is absent, as in the packaged app) added ~4 s each.
             paths = self._client.generate(
-                workflow, output_node=output_node, dest=output_path, timeout=600,
+                workflow, output_node=output_node, dest=output_path, timeout=600, interval=1,
             )
 
         except ComfyUIError as exc:
@@ -326,6 +350,31 @@ class ComfyUIImage(BaseTool):
             duration_seconds=round(time.time() - start, 2),
             seed=seed,
             model=model_name,
+        )
+
+    def _execute_batch(self, inputs: dict[str, Any]) -> ToolResult:
+        """Generate every item in one process: one agent call instead of one per image."""
+        shared = {key: value for key, value in inputs.items() if key not in {"batch", "prompt", "output_path", "seed"}}
+        start = time.time()
+        results: list[dict[str, Any]] = []
+        artifacts: list[str] = []
+        for item in inputs["batch"]:
+            result = self.execute({**shared, **item})
+            entry: dict[str, Any] = {"output_path": item.get("output_path"), "success": result.success, "seed": result.seed}
+            if result.success:
+                artifacts.extend(result.artifacts)
+                entry["data"] = result.data
+            else:
+                entry["error"] = result.error
+            results.append(entry)
+        failed = sum(1 for entry in results if not entry["success"])
+        return ToolResult(
+            success=failed == 0,
+            data={"provider": "comfyui", "count": len(results), "failed": failed, "results": results},
+            artifacts=artifacts,
+            error=f"{failed}/{len(results)} images failed; see data.results" if failed else None,
+            cost_usd=0.0,
+            duration_seconds=round(time.time() - start, 2),
         )
 
     @staticmethod

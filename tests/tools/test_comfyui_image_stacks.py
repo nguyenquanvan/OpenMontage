@@ -36,8 +36,9 @@ class FakeClient:
     def unavailable_reason(self):
         return "ComfyUI server not reachable"
 
-    def generate(self, workflow, *, output_node, dest, timeout):
+    def generate(self, workflow, *, output_node, dest, timeout, interval=5):
         self.submitted.append((workflow, output_node))
+        self.interval = interval
         Path(dest).write_bytes(b"png")
         return [Path(dest)]
 
@@ -83,6 +84,8 @@ def test_schnell_render_uses_the_servers_files_and_few_steps(tmp_path):
     assert workflow["4"]["inputs"]["text"] == "a snowy village"
     assert workflow["7"]["inputs"]["seed"] == 7
     assert workflow["7"]["inputs"]["steps"] == 4
+    # A ~16 s image must not wait out a 5 s poll tick.
+    assert tool._client.interval == 1
     assert result.data["license"]["commercial_use"] is True
     assert result.data["model"] == "flux1-schnell-Q4_K_S.gguf"
     assert result.data["workflow_provenance"]["workflow"] == "flux1-schnell-gguf-txt2img.json"
@@ -120,3 +123,46 @@ def test_info_reports_the_active_workflow_and_its_license():
     assert info["active_workflow"] == "flux1-schnell-gguf-txt2img"
     assert info["license"]["commercial_use"] is True
     assert set(info["workflow_licenses"]) == {"flux2-txt2img", "flux1-schnell-gguf-txt2img"}
+
+
+def test_batch_draws_every_item_in_one_call(tmp_path):
+    tool = tool_with(SCHNELL_ONLY)
+
+    result = tool.execute({
+        "width": 1344,
+        "height": 768,
+        "batch": [
+            {"prompt": "chalk bowl of yogurt", "output_path": str(tmp_path / "s1.png"), "seed": 11},
+            {"prompt": "chalk salmon fillet", "output_path": str(tmp_path / "s2.png"), "seed": 12, "width": 1024},
+        ],
+    })
+
+    assert result.success, result.error
+    assert result.data["count"] == 2 and result.data["failed"] == 0
+    assert result.artifacts == [str(tmp_path / "s1.png"), str(tmp_path / "s2.png")]
+    first, second = (workflow for workflow, _ in tool._client.submitted)
+    assert first["4"]["inputs"]["text"] == "chalk bowl of yogurt"
+    assert first["6"]["inputs"]["width"] == 1344
+    assert second["6"]["inputs"]["width"] == 1024
+    assert [entry["seed"] for entry in result.data["results"]] == [11, 12]
+
+
+def test_batch_reports_failed_items_without_hiding_the_rest(tmp_path):
+    tool = tool_with(SCHNELL_ONLY)
+    real_generate = tool._client.generate
+
+    def flaky(workflow, **kwargs):
+        if workflow["4"]["inputs"]["text"] == "bad":
+            raise RuntimeError("GPU out of memory")
+        return real_generate(workflow, **kwargs)
+
+    tool._client.generate = flaky
+    result = tool.execute({"batch": [
+        {"prompt": "good", "output_path": str(tmp_path / "ok.png")},
+        {"prompt": "bad", "output_path": str(tmp_path / "bad.png")},
+    ]})
+
+    assert not result.success
+    assert result.data["failed"] == 1
+    assert result.artifacts == [str(tmp_path / "ok.png")]
+    assert "GPU out of memory" in result.data["results"][1]["error"]

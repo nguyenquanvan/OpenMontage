@@ -50,7 +50,7 @@ audio:
 
 asset_generation:
   scene_type: "chalk_scene"
-  image_prompt_prefix: "white and pastel chalk drawing on a dark slate classroom blackboard, hand-drawn line art with light chalk shading, visible chalk-dust texture, one clear subject centered with empty board around it, simple educational illustration, "
+  image_prompt_prefix: "chalk drawing on a plain dark slate blackboard that fills the whole picture, no frame and no chalk tray, drawn by hand with white and pastel chalk sticks, rough sketchy chalk strokes, grainy chalk texture with smudges, simple line art with light hatching, no solid digital fills, one clear subject drawn large in the center of the board, educational blackboard illustration, "
   image_negative_prompt: "embedded text, letters, words, labels, numbers, captions, watermark, logo, photograph, photorealistic, 3d render, glossy, white background, paper, frame border, medical gore, surgery, fearmongering, miracle cure, distorted anatomy, clutter"
   diagram_style: "chalk-white lines and arrows; chalk yellow marks the active step, chalk blue the supporting states; every label is written by the composition engine in Patrick Hand"
   consistency_anchors:

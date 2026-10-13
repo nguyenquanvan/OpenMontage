@@ -146,7 +146,9 @@ When `human_approval_default: true`:
    go ahead and make the whole thing"), never covers a later gate. If the
    user explicitly pre-authorizes the full run, record that as a
    `decision_log` entry (`category: "approval_policy"`) at the moment they
-   say it — absent that entry, stop at every gate.
+   say it — absent that entry, stop at every gate. In MOSA TOOL ALL the
+   run form's "Chạy thẳng đến video cuối" box is that pre-authorization; the
+   run prompt then says so explicitly.
 
 6. **The assets gate reviews the storyboard — before any draft render.**
    `assets` now gates in every pipeline: present the generated assets

@@ -164,6 +164,94 @@ def test_run_note_from_the_start_form_reaches_the_agent_prompt(tmp_path, monkeyp
     assert checkpoint["metadata"]["run_note"] == note
 
 
+def _gate_prompt(tmp_path, monkeypatch, **kwargs):
+    projects = tmp_path / "projects"
+    project = projects / "gate-test"
+    project.mkdir(parents=True)
+    (project / "project.json").write_text(
+        json.dumps({"project_id": "gate-test", "title": "Gate Test", "pipeline_type": "health-infographic"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(state_mod, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(runner_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(runner_mod, "get_next_stage", lambda *args: "proposal")
+    monkeypatch.setattr(runner_mod.subprocess, "Popen", lambda *args, **kwargs: _FinishedProcess())
+    monkeypatch.setattr(runner_mod, "_watch_process", lambda *args: None)
+    runner_mod.start_run("gate-test", brief="Video bảng phấn 20 phút", agent="codex", allow_automation=True, **kwargs)
+    return project, (project / "agent_prompt.md").read_text(encoding="utf-8")
+
+
+def test_runs_stop_at_every_gate_by_default(tmp_path, monkeypatch):
+    project, prompt = _gate_prompt(tmp_path, monkeypatch)
+
+    assert "trình bày nội dung cần duyệt, rồi mới dừng" in prompt
+    assert "approval_policy" not in prompt
+    assert "auto_approve" not in json.loads((project / "agent_run.json").read_text(encoding="utf-8"))
+
+
+def test_auto_approve_pre_authorizes_every_gate_of_the_run(tmp_path, monkeypatch):
+    project, prompt = _gate_prompt(tmp_path, monkeypatch, auto_approve=True)
+
+    assert "## Người dùng duyệt trước toàn bộ lượt chạy" in prompt
+    assert '`category: "approval_policy"`' in prompt
+    assert "`human_approved=True`" in prompt
+    assert "rồi mới dừng" not in prompt
+    assert "vượt ngân sách" in prompt
+    assert json.loads((project / "agent_run.json").read_text(encoding="utf-8"))["auto_approve"] is True
+    checkpoint = json.loads((project / "checkpoint_proposal.json").read_text(encoding="utf-8"))
+    assert checkpoint["metadata"]["auto_approve"] is True
+
+
+def test_auto_approve_must_be_a_boolean(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match="auto_approve"):
+        _gate_prompt(tmp_path, monkeypatch, auto_approve="yes")
+
+
+def test_run_api_passes_auto_approve_to_the_runner(tmp_path, monkeypatch):
+    projects = tmp_path / "projects"
+    (projects / "api-gate").mkdir(parents=True)
+    monkeypatch.setattr(server_mod, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(server_mod, "_PROJECTS_ROOT_STR", os.path.normcase(str(projects.resolve())))
+    seen = {}
+
+    def fake_start_run(project_id, **kwargs):
+        seen.update(kwargs)
+        return {"project_id": project_id, "status": "starting"}
+
+    async def no_watch():
+        return None
+
+    monkeypatch.setattr(server_mod, "start_run", fake_start_run)
+    monkeypatch.setattr(server_mod, "_watch_projects", no_watch)
+    with TestClient(server_mod.create_app()) as client:
+        response = client.post(
+            "/api/project/api-gate/run",
+            json={"brief": "Video", "agent": "codex", "allow_automation": True, "auto_approve": True},
+        )
+    assert response.status_code == 202
+    assert seen["auto_approve"] is True
+
+
+def test_approval_policy_decisions_validate() -> None:
+    from schemas.artifacts import validate_artifact
+
+    validate_artifact("decision_log", {
+        "version": "1.0",
+        "project_id": "gate-test",
+        "decisions": [{
+            "decision_id": "d-approval",
+            "stage": "research",
+            "category": "approval_policy",
+            "subject": "Chạy thẳng",
+            "options_considered": [{"option_id": "auto", "label": "Duyệt trước toàn bộ", "score": 1.0,
+                                    "reason": "Người dùng chọn từ form chạy."}],
+            "selected": "auto",
+            "reason": "Người dùng bật Chạy thẳng đến video cuối.",
+            "confidence": 1.0,
+        }],
+    })
+
+
 def test_start_run_requires_explicit_automation_confirmation(tmp_path, monkeypatch):
     projects = tmp_path / "projects"
     projects.mkdir()

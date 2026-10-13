@@ -447,6 +447,7 @@ def create_app() -> FastAPI:
                 model=payload.get("model"),
                 allow_automation=payload.get("allow_automation", False),
                 run_note=payload.get("run_note") or None,
+                auto_approve=payload.get("auto_approve", False),
             )
         except ValueError as exc:
             detail = str(exc)

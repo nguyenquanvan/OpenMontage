@@ -931,7 +931,8 @@ async function openRunModal() {
       const runNote = form.querySelector("textarea[name=run_note]").value.trim();
       const agent = agentSelect.value;
       const model = form.querySelector("input[name=model]").value.trim();
-      const allowAutomation = form.querySelector("input[type=checkbox]").checked;
+      const allowAutomation = form.querySelector("input[name=allow_automation]").checked;
+      const autoApprove = form.querySelector("input[name=auto_approve]").checked;
       if (!brief) {
         status.textContent = "Hãy mô tả video cần sản xuất.";
         status.className = "run-status error";
@@ -954,7 +955,10 @@ async function openRunModal() {
         const response = await fetch(`/api/project/${encodedProjectId}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brief, run_note: runNote, agent, model, allow_automation: allowAutomation }),
+          body: JSON.stringify({
+            brief, run_note: runNote, agent, model,
+            allow_automation: allowAutomation, auto_approve: autoApprove,
+          }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "Không khởi chạy được workflow");
@@ -997,8 +1001,12 @@ async function openRunModal() {
     ),
     ollamaPanel,
     el("label", { class: "run-confirm" },
-      el("input", { type: "checkbox" }),
+      el("input", { type: "checkbox", name: "allow_automation" }),
       el("span", {}, "Tôi cho phép agent chạy lệnh trong workspace dự án để tạo nội dung và render video."),
+    ),
+    el("label", { class: "run-confirm" },
+      el("input", { type: "checkbox", name: "auto_approve" }),
+      el("span", {}, "Chạy thẳng đến video cuối: tôi duyệt trước mọi bước. Agent chỉ dừng khi có lỗi thật, thiếu API hoặc vượt ngân sách."),
     ),
     status,
     submit,

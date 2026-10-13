@@ -635,6 +635,7 @@ def _build_prompt(
     brief: str,
     review_feedback: str | None = None,
     run_note: str | None = None,
+    auto_approve: bool = False,
 ) -> str:
     pipeline_type = marker.get("pipeline_type") or "unknown"
     feedback_section = ""
@@ -655,6 +656,34 @@ Ghi chú này mới hơn brief và các quyết định cũ trong decision_log. 
 và ghi quyết định mới vào decision_log (nêu rõ quyết định cũ bị thay thế). Đây là câu trả lời của
 người dùng cho câu hỏi hoặc blocker lần trước; không hỏi lại điều đã được trả lời ở đây.
 """
+    if auto_approve:
+        feedback_section += """
+## Người dùng duyệt trước toàn bộ lượt chạy
+Người dùng đã bật "Chạy thẳng đến video cuối": họ duyệt trước mọi cổng duyệt của lượt chạy này.
+- Trước khi làm stage đầu tiên, ghi vào decision_log một mục `category: "approval_policy"`,
+  `subject: "Chạy thẳng"`, nêu rằng người dùng đã duyệt trước mọi cổng của lượt chạy này từ form chạy.
+- Ở stage có `human_approval_default: true`: tạo và tự review đầy đủ artifact như bình thường, rồi ghi
+  checkpoint `completed` với `human_approved=True` và đi tiếp ngay, không dừng chờ duyệt.
+- Vẫn dừng (ghi `awaiting_human` hoặc `failed` kèm lý do cụ thể) khi thiếu input/API, gặp lỗi thật, cần chi
+  phí vượt ngân sách đã có, cần đổi provider/model đã chọn, hoặc review còn lỗi nghiêm trọng chưa sửa được.
+"""
+        gate_rule = (
+            "3. Tuân thủ checkpoint protocol, schema artifact và review. Mục \"Người dùng duyệt trước toàn bộ\n"
+            "   lượt chạy\" là phê duyệt rõ ràng cho mọi cổng duyệt của lượt chạy này."
+        )
+        gated_stage_rule = (
+            "8. Với stage có `human_approval_default: true`, làm theo mục \"Người dùng duyệt trước toàn bộ\n"
+            "   lượt chạy\": tự review rồi ghi `completed` với `human_approved=True`, không dừng chờ duyệt."
+        )
+    else:
+        gate_rule = (
+            "3. Tuân thủ checkpoint protocol, schema artifact, review và cổng duyệt; không đánh dấu stage gated\n"
+            "   là completed nếu chưa có phê duyệt rõ ràng của người dùng."
+        )
+        gated_stage_rule = (
+            "8. Với stage có `human_approval_default: true`, hãy tạo và kiểm tra đầy đủ artifact của stage đó,\n"
+            "   ghi checkpoint `awaiting_human`, trình bày nội dung cần duyệt, rồi mới dừng."
+        )
     return f"""# MOSA TOOL ALL — bắt đầu production
 
 Bạn là agent điều phối workflow cho MOSA TOOL ALL. Hãy thực hiện production thật,
@@ -675,8 +704,7 @@ không chỉ mô phỏng trạng thái.
 ## Giao thức bắt buộc
 1. Đọc manifest tại `pipeline_defs/{pipeline_type}.yaml` và executive-producer skill tương ứng.
 2. Dùng workspace `{project_dir}` cho mọi checkpoint, artifact, asset và render của dự án.
-3. Tuân thủ checkpoint protocol, schema artifact, review và cổng duyệt; không đánh dấu stage gated
-   là completed nếu chưa có phê duyệt rõ ràng của người dùng.
+{gate_rule}
 4. Ưu tiên provider/local runtime đã cấu hình trong MOSA TOOL ALL; không tự phát sinh chi phí ngoài
    budget hoặc gọi provider chưa được cấu hình.
 5. Cập nhật checkpoint và events thường xuyên để bảng Backlot hiển thị tiến độ. Nếu thiếu input/API,
@@ -685,8 +713,7 @@ không chỉ mô phỏng trạng thái.
    không xoá dữ liệu ngoài workspace.
 7. Tiếp tục tự động qua mọi stage không yêu cầu duyệt. Một stage không gated vừa `completed`
    KHÔNG phải là điểm kết thúc workflow.
-8. Với stage có `human_approval_default: true`, hãy tạo và kiểm tra đầy đủ artifact của stage đó,
-   ghi checkpoint `awaiting_human`, trình bày nội dung cần duyệt, rồi mới dừng.
+{gated_stage_rule}
 
 Bắt đầu từ stage kế tiếp còn thiếu của pipeline. Chỉ được dừng khi đã tới checkpoint
 `awaiting_human`, hoàn tất toàn bộ pipeline, hoặc gặp lỗi/blocker thật đã được ghi rõ vào checkpoint.
@@ -838,6 +865,7 @@ def start_run(
     allow_automation: bool = False,
     review_feedback: str | None = None,
     run_note: str | None = None,
+    auto_approve: bool = False,
 ) -> dict[str, Any]:
     project_dir = state_mod.PROJECTS_DIR / project_id
     if not project_dir.is_dir():
@@ -848,6 +876,8 @@ def start_run(
         raise ValueError("Model phải là văn bản")
     if not isinstance(allow_automation, bool):
         raise ValueError("allow_automation phải là boolean")
+    if not isinstance(auto_approve, bool):
+        raise ValueError("auto_approve phải là boolean")
     if review_feedback is not None and not isinstance(review_feedback, str):
         raise ValueError("Phản hồi duyệt phải là văn bản")
     if run_note is not None and not isinstance(run_note, str):
@@ -885,7 +915,7 @@ def start_run(
         blocker = _ollama_stage_blocker(marker.get("pipeline_type"), next_stage)
         if blocker:
             raise ValueError(blocker)
-    prompt = _build_prompt(project_id, project_dir, marker, brief, review_feedback, run_note)
+    prompt = _build_prompt(project_id, project_dir, marker, brief, review_feedback, run_note, auto_approve)
     (project_dir / PROMPT_FILENAME).write_text(prompt, encoding="utf-8")
     command = _command(resolved_agent, executable, project_dir, model, allow_automation, prompt)
     marker["brief"] = brief
@@ -905,6 +935,8 @@ def start_run(
         run["review_feedback"] = review_feedback
     if run_note:
         run["run_note"] = run_note
+    if auto_approve:
+        run["auto_approve"] = True
     _write_json(_run_path(project_dir), run)
     emit_event(project_dir, {"tool": f"agent:{resolved_agent}", "event": "start", "status": "starting"})
 
@@ -921,6 +953,7 @@ def start_run(
                 "run_started_at": run["started_at"],
                 **({"review_feedback": review_feedback} if review_feedback else {}),
                 **({"run_note": run_note} if run_note else {}),
+                **({"auto_approve": True} if auto_approve else {}),
             },
         )
     except Exception as exc:

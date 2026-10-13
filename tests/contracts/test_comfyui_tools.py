@@ -886,7 +886,11 @@ class TestCustomWorkflowContract:
     def test_bundled_workflow_provenance_records_hash_and_stack(self, tmp_path):
         tool = ComfyUIImage()
         tool._client.is_available = lambda: True
-        tool._client.check_models = lambda required: (list(required), [])
+        tool._client.list_models = lambda: {
+            "diffusion_models": ["flux2-dev-nvfp4.safetensors"],
+            "clip": ["mistral_3_small_flux2_fp4_mixed.safetensors"],
+            "vae": ["flux2-vae.safetensors"],
+        }
         tool._client.generate = lambda workflow, output_node, dest, **kwargs: [Path(dest)]
 
         result = tool.execute({
@@ -895,6 +899,7 @@ class TestCustomWorkflowContract:
         })
 
         provenance = result.data["workflow_provenance"]
+        assert provenance["workflow"] == "flux2-txt2img.json"
         assert provenance["source"] == "bundled"
         assert provenance["workflow_hash_sha256"]
         assert any(item["role"] == "vae" for item in provenance["model_stack"])

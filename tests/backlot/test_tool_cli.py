@@ -18,6 +18,7 @@ from tools.tool_registry import ToolRegistry
 class FreeTool(BaseTool):
     name = "fake_free"
     capability = "image_generation"
+    agent_skills = ["character-rigging", "no-such-skill"]
     input_schema = {"type": "object", "required": ["prompt"], "properties": {"prompt": {"type": "string"}}}
     license_terms = {"name": "Apache-2.0", "commercial_use": True}
 
@@ -73,6 +74,22 @@ def test_describe_returns_the_input_schema(registry):
     assert tool_cli.describe_tool("fake_free")["input_schema"]["required"] == ["prompt"]
     with pytest.raises(LookupError):
         tool_cli.describe_tool("nope")
+
+
+def test_describe_points_to_the_shipped_skill_files(registry):
+    files = tool_cli.describe_tool("fake_free")["agent_skill_files"]
+
+    assert Path(files["character-rigging"]).name == "SKILL.md"
+    assert Path(files["character-rigging"]).is_file()
+    assert files["no-such-skill"] is None
+
+
+def test_every_skill_a_tool_names_exists_in_the_skills_folder():
+    from tools.tool_registry import registry as real_registry
+
+    real_registry.ensure_discovered()
+    named = {skill for name in real_registry.list_all() for skill in real_registry.get(name).agent_skills}
+    assert {skill for skill in named if tool_cli.agent_skill_file(skill) is None} == set()
 
 
 def test_run_returns_the_tool_result_as_json_ready_data(registry):

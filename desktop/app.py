@@ -187,6 +187,40 @@ def start_server(port: int) -> Any:
     return server
 
 
+FLASHW_ALL = 0x3
+FLASHW_TIMERNOFG = 0xC
+MB_ICONASTERISK = 0x40
+MB_ICONEXCLAMATION = 0x30
+
+
+def attention_listener(window_title: str, user32: Any = None):
+    """Flash the app on the taskbar until it is focused, and play a sound, when an agent run stops."""
+
+    def notify(project_id: str, status: str, detail: str) -> None:
+        if sys.platform != "win32":
+            return
+        import ctypes
+
+        api = user32 or ctypes.windll.user32
+
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.c_uint),
+                ("hwnd", ctypes.c_void_p),
+                ("dwFlags", ctypes.c_ulong),
+                ("uCount", ctypes.c_uint),
+                ("dwTimeout", ctypes.c_ulong),
+            ]
+
+        hwnd = api.FindWindowW(None, window_title)
+        if hwnd:
+            info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, FLASHW_ALL | FLASHW_TIMERNOFG, 0, 0)
+            api.FlashWindowEx(ctypes.byref(info))
+        api.MessageBeep(MB_ICONEXCLAMATION if status == "failed" else MB_ICONASTERISK)
+
+    return notify
+
+
 def open_window(url: str, *, browser_only: bool = False) -> None:
     """Show the app in a native window, falling back to the default browser."""
     if browser_only:
@@ -252,6 +286,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     port = choose_port(args.port)
     server = start_server(port)
+    if not args.server_only:
+        from backlot import notifications
+
+        notifications.add_listener(attention_listener(f"{APP_NAME} {APP_VERSION}"))
     update_stop = threading.Event()
     if not args.server_only and getattr(sys, "frozen", False):
         from backlot.app_updater import automatic_update_loop

@@ -794,7 +794,7 @@ If you'd like to go further, [sponsor the project](https://github.com/sponsors/c
 MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
 
-Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.3` · build `20261013.1`**. App hiển thị
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.4` · build `20261013.2`**. App hiển thị
 phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
 `GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
 trong `lib/app_version.py`.
@@ -819,7 +819,12 @@ Kết quả được ghi thành JSON, vì bản cửa sổ không có console:
 
 Mã thoát `0` là tool chạy thành công, `1` là tool báo lỗi, `2` là gọi sai hoặc tool có chi phí
 chưa được cho phép. Tool có chi phí chỉ chạy khi thêm `--allow-cost`. Prompt của agent đã ghi
-sẵn đường dẫn app và các luật này.
+sẵn đường dẫn app và các luật này. Tài liệu kỹ năng mà tool yêu cầu (`agent_skills`, ở
+`.agents/skills`) được đóng gói cùng app, trừ media minh hoạ; `--describe-tool` trả đường dẫn
+`SKILL.md` trong `agent_skill_files`.
+
+Khi agent dừng (xong, chờ duyệt hoặc lỗi), cửa sổ app nháy trên thanh tác vụ đến khi được mở và
+phát tiếng báo. Board ghi lý do agent đã tự ghi vào checkpoint thay cho câu báo lỗi chung.
 
 Trong form **Bắt đầu workflow**, ô **Ghi chú cho lần chạy này** dùng để trả lời câu hỏi agent để
 lại hoặc đổi một quyết định mà không phải sửa Brief.

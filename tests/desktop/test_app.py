@@ -63,6 +63,37 @@ def test_desktop_log_rolls_over_when_too_large(tmp_path, monkeypatch):
     assert "started" in (logs / "desktop.log").read_text(encoding="utf-8")
 
 
+def test_stopped_run_flashes_the_app_window_and_beeps(monkeypatch):
+    calls = []
+
+    class User32:
+        def FindWindowW(self, cls, title):
+            calls.append(("find", title))
+            return 4242
+
+        def FlashWindowEx(self, info):
+            calls.append(("flash",))
+
+        def MessageBeep(self, kind):
+            calls.append(("beep", kind))
+
+    monkeypatch.setattr(desktop_app.sys, "platform", "win32")
+    notify = desktop_app.attention_listener("MOSA TOOL ALL 9.9.9", user32=User32())
+
+    notify("tieng-anh", "failed", "thiếu tài liệu kỹ năng")
+    notify("tieng-anh", "awaiting_human", "rig_plan")
+
+    assert calls == [
+        ("find", "MOSA TOOL ALL 9.9.9"), ("flash",), ("beep", desktop_app.MB_ICONEXCLAMATION),
+        ("find", "MOSA TOOL ALL 9.9.9"), ("flash",), ("beep", desktop_app.MB_ICONASTERISK),
+    ]
+
+
+def test_attention_listener_is_silent_off_windows(monkeypatch):
+    monkeypatch.setattr(desktop_app.sys, "platform", "linux")
+    desktop_app.attention_listener("x", user32=object())("p", "failed", "")
+
+
 def test_configure_agent_path_adds_existing_user_bin(tmp_path, monkeypatch):
     home = tmp_path / "home"
     user_bin = home / ".local" / "bin"

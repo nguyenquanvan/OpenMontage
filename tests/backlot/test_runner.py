@@ -299,6 +299,32 @@ def test_failed_worker_marks_active_checkpoint_failed(tmp_path):
     assert checkpoint["error"] == run["error"]
 
 
+def test_agent_blocker_reason_is_reported_and_the_desktop_is_told(tmp_path, monkeypatch):
+    project = tmp_path / "projects" / "blocked"
+    project.mkdir(parents=True)
+    (project / "project.json").write_text(
+        json.dumps({"project_id": "blocked", "pipeline_type": "character-animation"}), encoding="utf-8"
+    )
+    (project / "agent_run.json").write_text(
+        json.dumps({"project_id": "blocked", "status": "running", "agent": "codex"}), encoding="utf-8"
+    )
+    blocker = "Required tool skills missing: character-rigging. No rig generated."
+    runner_mod.write_checkpoint(
+        project.parent, "blocked", "rig_plan", "failed", {},
+        pipeline_type="character-animation", error=blocker,
+    )
+    monkeypatch.setattr(runner_mod, "get_next_stage", lambda *args: "rig_plan")
+    heard = []
+    monkeypatch.setattr(runner_mod.notifications, "_listeners", [lambda *args: heard.append(args)])
+
+    runner_mod._watch_process("blocked", project, _FinishedProcess())
+
+    run = json.loads((project / "agent_run.json").read_text(encoding="utf-8"))
+    assert run["status"] == "failed"
+    assert run["error"] == f"Agent dừng ở stage 'rig_plan': {blocker}"
+    assert heard == [("blocked", "failed", run["error"])]
+
+
 def test_successful_worker_is_failed_when_pipeline_stops_before_gate(tmp_path, monkeypatch):
     project = tmp_path / "projects" / "early-stop"
     project.mkdir(parents=True)

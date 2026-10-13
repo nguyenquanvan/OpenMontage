@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from backlot import notifications
 from backlot import state as state_mod
 from lib.paths import REPO_ROOT
 from lib.checkpoint import get_next_stage, get_pipeline_stages, write_checkpoint
@@ -615,6 +616,8 @@ trước lệnh):
   `{command} --run-tool <tên> --tool-input "<file input>" --tool-output "<file output>"`
   Mã thoát 0 là thành công, 1 là tool lỗi, 2 là sai cách gọi hoặc tool có chi phí bị chặn. Đọc file output để
   lấy `data`, `artifacts`, `error`.
+- Tài liệu kỹ năng (`agent_skills`) của mỗi tool nằm ở `{REPO_ROOT / '.agents' / 'skills'}/<tên>/SKILL.md`;
+  `--describe-tool` ghi sẵn đường dẫn trong `agent_skill_files`. Đọc chúng trước khi chạy tool.
 - Dùng tool của app cho TTS, ảnh, nhạc, ghép âm thanh, dựng, render và review. Chỉ tự viết script khi không có
   tool phù hợp; khi đó ghi lý do vào decision_log.
 - Tool có `estimated_cost_usd` > 0 chỉ chạy khi chi phí đã nằm trong ngân sách người dùng duyệt; khi đó thêm
@@ -810,6 +813,10 @@ def _watch_process(project_id: str, project_dir: Path, process: subprocess.Popen
                 f"Agent đã dừng trước khi hoàn tất stage '{next_stage}' hoặc tạo cổng duyệt. "
                 "Hãy chạy lại workflow để tiếp tục."
             )
+            blocker = (next_checkpoint or {}).get("error")
+            if (next_checkpoint or {}).get("status") == "failed" and isinstance(blocker, str) and blocker.strip():
+                # The agent recorded why it stopped; that reason is what the owner has to act on.
+                fallback = f"Agent dừng ở stage '{next_stage}': {blocker.strip()[:600]}"
             run["error"] = _run_failure_detail(project_dir, fallback)
             _fail_active_checkpoint(project_dir, run["error"], run)
     _write_json(_run_path(project_dir), run)
@@ -819,6 +826,7 @@ def _watch_process(project_id: str, project_dir: Path, process: subprocess.Popen
         "status": run["status"],
         "exit_code": return_code,
     })
+    notifications.run_stopped(project_id, run["status"], run.get("error") or run.get("awaiting_stage") or "")
 
 
 def start_run(

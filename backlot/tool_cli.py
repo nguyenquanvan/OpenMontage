@@ -64,11 +64,21 @@ def list_tools() -> dict[str, Any]:
     return {"count": len(tools), "tools": tools}
 
 
+def agent_skill_file(skill: str) -> Path | None:
+    """SKILL.md of a Layer 3 agent skill shipped with the app, if present."""
+    path = REPO_ROOT / ".agents" / "skills" / skill / "SKILL.md"
+    return path if path.is_file() else None
+
+
 def describe_tool(name: str) -> dict[str, Any]:
     tool = _registry().get(name)
     if tool is None:
         raise LookupError(name)
-    return tool.get_info()
+    info = tool.get_info()
+    info["agent_skill_files"] = {
+        skill: (str(path) if (path := agent_skill_file(skill)) else None) for skill in tool.agent_skills
+    }
+    return info
 
 
 def run_tool(name: str, inputs: dict[str, Any], *, allow_cost: bool = False) -> tuple[int, dict[str, Any]]:

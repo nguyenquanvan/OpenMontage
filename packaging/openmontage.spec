@@ -30,6 +30,12 @@ datas = [
     data_dir("runtime_workers"),
     (str(ROOT / "packaging" / "runtime"), "runtime"),
 ]
+# Layer 3 agent skills: tools name them in `agent_skills` and agents read them before using the
+# tool, so they must ship with the app. Example media (videos, images, audio) is left out.
+_SKILL_MEDIA = {".mp4", ".mov", ".webm", ".mp3", ".wav", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
+for skill_file in sorted((ROOT / ".agents" / "skills").rglob("*")):
+    if skill_file.is_file() and skill_file.suffix.lower() not in _SKILL_MEDIA:
+        datas.append((str(skill_file), str(skill_file.parent.relative_to(ROOT))))
 hiddenimports = []
 
 # pywebview discovers platform backends dynamically; tool discovery does the

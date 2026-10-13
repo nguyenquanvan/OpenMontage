@@ -54,7 +54,9 @@ class TestContract:
         schema = tool.input_schema
         assert schema.get("type") == "object"
         assert "prompt" in schema.get("properties", {})
-        assert "prompt" in schema.get("required", [])
+        # A batch-capable tool requires prompt in one anyOf branch instead.
+        branches = [set(branch.get("required", [])) for branch in schema.get("anyOf", [])]
+        assert "prompt" in schema.get("required", []) or any("prompt" in branch for branch in branches)
 
     def test_has_capabilities(self, cls):
         tool = cls()

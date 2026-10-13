@@ -40,7 +40,11 @@ class ManagedLocalModel(BaseTool, ABC):
         return ToolStatus.AVAILABLE if managed_model_available(self.model_id) else ToolStatus.UNAVAILABLE
 
     def _run_worker(self, payload: dict[str, Any], timeout: int = 3600) -> ToolResult:
-        return run_model_worker(self.model_id, self.operation, payload, timeout=timeout)
+        result = run_model_worker(self.model_id, self.operation, payload, timeout=timeout)
+        if result.success and self.license_terms:
+            # The asset manifest copies tool data, so the restriction travels with the file.
+            result.data = {**(result.data or {}), "license": dict(self.license_terms)}
+        return result
 
 
 class VieNeuTTS(ManagedLocalModel):
@@ -206,6 +210,11 @@ class MusicGenLocal(ManagedLocalModel):
     best_for = ["non-commercial music experiments"]
     not_good_for = ["commercial production"]
     install_instructions = "Research-only; cài và xác nhận license trong Model Center"
+    license_terms = {
+        "name": "CC-BY-NC-4.0 (MusicGen model weights)",
+        "commercial_use": False,
+        "url": "https://huggingface.co/facebook/musicgen-small",
+    }
     input_schema = {"type": "object", "required": ["prompt", "output_path"], "properties": {
         "prompt": {"type": "string"}, "output_path": {"type": "string"}, "max_new_tokens": {"type": "integer"},
     }}

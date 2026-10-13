@@ -59,7 +59,7 @@ class ComfyUIClient:
         resolved = (
             server_url or self._capability_url() or os.environ.get("COMFYUI_SERVER_URL")
         )
-        self.server_url = (resolved or "http://localhost:8188").rstrip("/")
+        self.server_url = (resolved or "http://127.0.0.1:8188").rstrip("/")
         # Scopes websocket execution events to this client (see wait_ws) and
         # is echoed back on /prompt so the server targets messages to us.
         self.client_id = str(uuid.uuid4())
@@ -88,7 +88,7 @@ class ComfyUIClient:
                 f"No ComfyUI server found at {self.server_url} "
                 f"(default — no server URL configured).\n"
                 f"Set {env_var_hint} in your .env file to the address of "
-                f"your ComfyUI server (e.g. http://localhost:8188)."
+                f"your ComfyUI server (e.g. http://127.0.0.1:8188)."
             )
         return (
             f"ComfyUI server not reachable at {self.server_url}.\n"
@@ -126,6 +126,9 @@ class ComfyUIClient:
             "VAELoader": ("vae_name", "vae"),
             "CLIPLoader": ("clip_name", "clip"),
             "LoraLoaderModelOnly": ("lora_name", "loras"),
+            # ComfyUI-GGUF custom nodes: quantized FLUX.1 that fits 8 GB cards.
+            "UnetLoaderGGUF": ("unet_name", "unet_gguf"),
+            "DualCLIPLoaderGGUF": ("clip_name1", "clip_gguf"),
         }
         result: dict[str, list[str]] = {}
         for node_class, (field, group) in node_to_key.items():

@@ -71,7 +71,7 @@ LOCAL_FIELDS: tuple[dict[str, Any], ...] = (
     {"key": "MLX_WHISPER_MODEL_DIR", "label": "MLX Whisper", "type": "text", "hint": "Whisper tối ưu cho Apple Silicon."},
     {"key": "MUSICGEN_MODEL_DIR", "label": "MusicGen research", "type": "text", "hint": "Chỉ dùng nghiên cứu do license CC-BY-NC."},
     {"key": "QWEN_VL_MODEL_DIR", "label": "Qwen VL research", "type": "text", "hint": "Chỉ dùng nghiên cứu theo Qwen Research License."},
-    {"key": "COMFYUI_SERVER_URL", "label": "ComfyUI server", "type": "url", "hint": "Mặc định http://localhost:8188."},
+    {"key": "COMFYUI_SERVER_URL", "label": "ComfyUI server", "type": "url", "hint": "Mặc định http://127.0.0.1:8188."},
     {"key": "COMFYUI_IMAGE_SERVER_URL", "label": "ComfyUI ảnh riêng", "type": "url", "hint": "Tuỳ chọn: server ComfyUI dành riêng cho ảnh."},
     {"key": "COMFYUI_VIDEO_SERVER_URL", "label": "ComfyUI video riêng", "type": "url", "hint": "Tuỳ chọn: server ComfyUI dành riêng cho video."},
     {"key": "COMFYUI_MUSIC_SERVER_URL", "label": "ComfyUI nhạc riêng", "type": "url", "hint": "Tuỳ chọn: server ComfyUI dành riêng cho ACE-Step."},

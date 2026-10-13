@@ -446,6 +446,7 @@ def create_app() -> FastAPI:
                 agent=payload.get("agent"),
                 model=payload.get("model"),
                 allow_automation=payload.get("allow_automation", False),
+                run_note=payload.get("run_note") or None,
             )
         except ValueError as exc:
             detail = str(exc)

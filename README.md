@@ -794,7 +794,7 @@ If you'd like to go further, [sponsor the project](https://github.com/sponsors/c
 MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
 
-Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.2` · build `20260923.19`**. App hiển thị
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.3` · build `20261013.1`**. App hiển thị
 phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
 `GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
 trong `lib/app_version.py`.
@@ -802,6 +802,31 @@ trong `lib/app_version.py`.
 Bản desktop đóng gói tự kiểm tra bản mới qua GitHub Releases. Windows tự tải, xác
 minh SHA-256 và cài khi workflow đang chạy xong; macOS tự tải DMG, sau đó cần
 người dùng kéo app vào Applications. Cả ba màn hình chính đều báo tiến độ cập nhật.
+
+Nhật ký lỗi của bản cài nằm ở `<thư mục dữ liệu>/logs/desktop.log`. Trên Windows đó là
+`%LOCALAPPDATA%\MOSA TOOL ALL\logs\desktop.log`; quá 5 MB thì bản cũ chuyển sang `desktop.log.1`.
+
+### Agent gọi tool của app
+
+Bản cài không có mã nguồn `tools/*.py`, nên Codex và Claude Code gọi tool qua chính app.
+Kết quả được ghi thành JSON, vì bản cửa sổ không có console:
+
+```bash
+"MOSA TOOL ALL.exe" --list-tools --tool-output tools.json
+"MOSA TOOL ALL.exe" --describe-tool comfyui_image --tool-output info.json
+"MOSA TOOL ALL.exe" --run-tool comfyui_image --tool-input in.json --tool-output out.json
+```
+
+Mã thoát `0` là tool chạy thành công, `1` là tool báo lỗi, `2` là gọi sai hoặc tool có chi phí
+chưa được cho phép. Tool có chi phí chỉ chạy khi thêm `--allow-cost`. Prompt của agent đã ghi
+sẵn đường dẫn app và các luật này.
+
+Trong form **Bắt đầu workflow**, ô **Ghi chú cho lần chạy này** dùng để trả lời câu hỏi agent để
+lại hoặc đổi một quyết định mà không phải sửa Brief.
+
+`comfyui_image` dùng FLUX.2 Dev khi máy có đủ ba file của nó. Nếu không, tool tự chuyển sang
+FLUX.1 schnell GGUF (cần custom node ComfyUI-GGUF), bản chạy được trên card 8 GB và được dùng
+thương mại. Mặc định ComfyUI ở `http://127.0.0.1:8188`.
 
 ### Agent miễn phí bằng Ollama
 

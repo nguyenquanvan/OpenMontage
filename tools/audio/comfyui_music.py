@@ -59,7 +59,7 @@ class ComfyUIMusic(BaseTool):
     setup_offer = COMFYUI_SETUP_OFFER
     install_instructions = (
         "Start a ComfyUI server and set COMFYUI_SERVER_URL "
-        "(default http://localhost:8188).\n"
+        "(default http://127.0.0.1:8188).\n"
         "Requires ace_step_v1_3.5b.safetensors in ComfyUI's checkpoints "
         "directory for the bundled workflow.\n"
         "Running a separate ComfyUI instance for music? Set "

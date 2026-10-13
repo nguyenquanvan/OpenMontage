@@ -225,7 +225,7 @@ function renderLocalSettings() {
           }
           const control = field.type === "select"
             ? `<select data-local-key="${escapeHtml(field.key)}">${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${value === option ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select>`
-            : `<input type="${field.type === "url" ? "url" : "text"}" data-local-key="${escapeHtml(field.key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.type === "url" ? "http://localhost:8188" : "Chưa cấu hình")}">`;
+            : `<input type="${field.type === "url" ? "url" : "text"}" data-local-key="${escapeHtml(field.key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.type === "url" ? "http://127.0.0.1:8188" : "Chưa cấu hình")}">`;
           return `<label class="local-setting-row"><span><strong>${escapeHtml(field.label)}</strong><small>${escapeHtml(field.hint)}</small></span>${control}</label>`;
         }).join("")}
       </div>

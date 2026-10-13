@@ -106,7 +106,7 @@ class ComfyUIVideo(BaseTool):
     setup_offer = COMFYUI_SETUP_OFFER
     install_instructions = (
         "Start a ComfyUI server and set COMFYUI_SERVER_URL "
-        "(default http://localhost:8188).\n"
+        "(default http://127.0.0.1:8188).\n"
         "Bundled local WAN requires WAN 2.2 models and LightX2V LoRAs. Local "
         "MiniMax H3 requires its official model stack and exported API workflow.\n"
         "Gemini Omni, Seedance 2.5, and MiniMax H3 Partner Nodes require a "

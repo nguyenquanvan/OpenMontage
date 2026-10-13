@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -72,6 +73,66 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     os.replace(temp, path)
 
 
+_AUTH_PHRASES = (
+    "oauth access token is invalid",
+    "failed to authenticate",
+    "authentication failed",
+)
+_AUTH_401 = re.compile(
+    r"\b401\b.{0,200}?\b(?:oauth|unauthorized)|\b(?:oauth|unauthorized).{0,200}?\b401\b"
+)
+_USAGE_LIMIT = re.compile(r"\busage limit\b")
+
+
+def _event_error_texts(event: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    for key in ("message", "result", "error", "errors"):
+        value = event.get(key)
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, dict):
+                item = " ".join(str(item[part]) for part in ("type", "message") if item.get(part))
+            if isinstance(item, str) and item.strip():
+                texts.append(item)
+    return texts
+
+
+def _failure_signals(lines: list[str]) -> tuple[list[str], bool]:
+    """Return the text of real error reports and whether the API answered 401.
+
+    Claude's stream-json and Codex's --json logs also carry the session init
+    (tool and skill names such as "doc-coauthoring"), tool output, and ids or
+    base64 data where "401" occurs by chance. Only plain stderr/worker lines,
+    explicit error events, and a final result that reports an error count.
+    """
+    signals: list[str] = []
+    final_result: dict[str, Any] | None = None
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        if not text.startswith("{"):
+            signals.append(text)
+            continue
+        try:
+            event = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "result":
+            final_result = event
+        elif event.get("type") in {"error", "turn.failed"}:
+            signals.extend(_event_error_texts(event))
+    unauthorized = False
+    if final_result and (
+        final_result.get("is_error") is True
+        or str(final_result.get("subtype") or "").startswith("error")
+    ):
+        signals.extend(_event_error_texts(final_result))
+        unauthorized = final_result.get("api_error_status") == 401
+    return signals, unauthorized
+
+
 def _run_failure_detail(project_dir: Path, fallback: str) -> str:
     try:
         lines = (project_dir / LOG_FILENAME).read_text(
@@ -79,28 +140,24 @@ def _run_failure_detail(project_dir: Path, fallback: str) -> str:
         ).splitlines()
     except OSError:
         return fallback
-    recent = "\n".join(lines[-160:])
-    lowered = recent.lower()
-    if (
-        "oauth access token is invalid" in lowered
-        or "failed to authenticate" in lowered
-        or "authentication failed" in lowered
-        or "401" in lowered and "oauth" in lowered
-    ):
+    signals, unauthorized = _failure_signals(lines[-160:])
+    lowered = [signal.lower() for signal in signals]
+    if unauthorized or any(
+        phrase in signal for signal in lowered for phrase in _AUTH_PHRASES
+    ) or any(_AUTH_401.search(signal) for signal in lowered):
         return (
             "Claude Code chưa xác thực được (OAuth token không hợp lệ). "
             "Hãy chạy `claude auth login` trong Terminal, đăng nhập lại tài khoản Claude, "
             "sau đó bấm 'Bắt đầu workflow' để thử lại; dữ liệu dự án vẫn được giữ nguyên."
         )
-    if "hit your usage limit" in lowered or "usage limit" in lowered:
+    if any(_USAGE_LIMIT.search(signal) for signal in lowered):
         return (
             "Agent Codex đã hết hạn mức sử dụng. Hãy chọn Claude Code hoặc thử lại sau khi "
             "hạn mức được đặt lại; dữ liệu dự án vẫn được giữ nguyên."
         )
-    for line in reversed(lines[-80:]):
-        text = line.strip()
-        if "LỖI:" in text:
-            return text.split("LỖI:", 1)[1].strip()[:500] or fallback
+    for signal in reversed(signals):
+        if "LỖI:" in signal:
+            return signal.split("LỖI:", 1)[1].strip()[:500] or fallback
     return fallback
 
 
@@ -542,12 +599,39 @@ def _persist_materialized_artifacts(
         _write_json(target, artifacts[name])
 
 
+def _tools_section(project_dir: Path) -> str:
+    """How an external agent runs the app's own tools (the packaged app has no tools/*.py to import)."""
+    from backlot.tool_cli import tool_command
+
+    command = " ".join(f'"{part}"' for part in tool_command())
+    io_dir = project_dir / "scripts" / "tool_io"
+    return f"""
+## Công cụ của MOSA TOOL ALL (bắt buộc dùng)
+Bản cài không có mã nguồn `tools/*.py` để import. Gọi tool của app qua chính app (trong PowerShell đặt `&`
+trước lệnh):
+- Danh sách tool và trạng thái: `{command} --list-tools --tool-output "{io_dir / 'tools.json'}"`
+- Thông tin và input_schema của một tool: `{command} --describe-tool <tên> --tool-output "{io_dir / '<tên>_info.json'}"`
+- Chạy tool: ghi input JSON vào `{io_dir}`, rồi
+  `{command} --run-tool <tên> --tool-input "<file input>" --tool-output "<file output>"`
+  Mã thoát 0 là thành công, 1 là tool lỗi, 2 là sai cách gọi hoặc tool có chi phí bị chặn. Đọc file output để
+  lấy `data`, `artifacts`, `error`.
+- Dùng tool của app cho TTS, ảnh, nhạc, ghép âm thanh, dựng, render và review. Chỉ tự viết script khi không có
+  tool phù hợp; khi đó ghi lý do vào decision_log.
+- Tool có `estimated_cost_usd` > 0 chỉ chạy khi chi phí đã nằm trong ngân sách người dùng duyệt; khi đó thêm
+  `--allow-cost`.
+- Giấy phép: tool có `license.commercial_use` = false (ví dụ `musicgen_local`) không được chọn cho video có thể
+  dùng thương mại, trừ khi người dùng đã đồng ý rõ. Nêu giấy phép của mọi provider được chọn trong proposal và
+  decision_log, và giữ trường `license` của kết quả tool trong asset_manifest.
+"""
+
+
 def _build_prompt(
     project_id: str,
     project_dir: Path,
     marker: dict[str, Any],
     brief: str,
     review_feedback: str | None = None,
+    run_note: str | None = None,
 ) -> str:
     pipeline_type = marker.get("pipeline_type") or "unknown"
     feedback_section = ""
@@ -558,6 +642,15 @@ def _build_prompt(
 
 Hãy sửa artifact của stage hiện tại theo phản hồi trên, tự kiểm tra lại, rồi ghi một
 checkpoint `awaiting_human` mới để người dùng duyệt lại. Không bỏ qua cổng duyệt.
+"""
+    if run_note:
+        feedback_section += f"""
+## Ghi chú của người dùng cho lần chạy này
+{run_note}
+
+Ghi chú này mới hơn brief và các quyết định cũ trong decision_log. Nếu mâu thuẫn, làm theo ghi chú
+và ghi quyết định mới vào decision_log (nêu rõ quyết định cũ bị thay thế). Đây là câu trả lời của
+người dùng cho câu hỏi hoặc blocker lần trước; không hỏi lại điều đã được trả lời ở đây.
 """
     return f"""# MOSA TOOL ALL — bắt đầu production
 
@@ -574,6 +667,7 @@ không chỉ mô phỏng trạng thái.
 ## Brief người dùng
 {brief}
 {feedback_section}
+{_tools_section(project_dir)}
 
 ## Giao thức bắt buộc
 1. Đọc manifest tại `pipeline_defs/{pipeline_type}.yaml` và executive-producer skill tương ứng.
@@ -735,6 +829,7 @@ def start_run(
     model: str | None = None,
     allow_automation: bool = False,
     review_feedback: str | None = None,
+    run_note: str | None = None,
 ) -> dict[str, Any]:
     project_dir = state_mod.PROJECTS_DIR / project_id
     if not project_dir.is_dir():
@@ -747,13 +842,18 @@ def start_run(
         raise ValueError("allow_automation phải là boolean")
     if review_feedback is not None and not isinstance(review_feedback, str):
         raise ValueError("Phản hồi duyệt phải là văn bản")
+    if run_note is not None and not isinstance(run_note, str):
+        raise ValueError("Ghi chú cho lần chạy phải là văn bản")
     brief = brief.strip()
     model = model.strip() if isinstance(model, str) else None
     review_feedback = review_feedback.strip() if isinstance(review_feedback, str) else None
+    run_note = run_note.strip() if isinstance(run_note, str) else None
     if not brief:
         raise ValueError("Hãy mô tả video cần sản xuất trước khi bắt đầu")
     if len(brief) > MAX_BRIEF_LENGTH:
         raise ValueError(f"Brief quá dài, tối đa {MAX_BRIEF_LENGTH} ký tự")
+    if run_note and len(run_note) > MAX_REVIEW_NOTE_LENGTH:
+        raise ValueError(f"Ghi chú quá dài, tối đa {MAX_REVIEW_NOTE_LENGTH} ký tự")
 
     current = get_run(project_id)
     if current.get("status") in {"starting", "running"}:
@@ -777,7 +877,7 @@ def start_run(
         blocker = _ollama_stage_blocker(marker.get("pipeline_type"), next_stage)
         if blocker:
             raise ValueError(blocker)
-    prompt = _build_prompt(project_id, project_dir, marker, brief, review_feedback)
+    prompt = _build_prompt(project_id, project_dir, marker, brief, review_feedback, run_note)
     (project_dir / PROMPT_FILENAME).write_text(prompt, encoding="utf-8")
     command = _command(resolved_agent, executable, project_dir, model, allow_automation, prompt)
     marker["brief"] = brief
@@ -795,6 +895,8 @@ def start_run(
     }
     if review_feedback:
         run["review_feedback"] = review_feedback
+    if run_note:
+        run["run_note"] = run_note
     _write_json(_run_path(project_dir), run)
     emit_event(project_dir, {"tool": f"agent:{resolved_agent}", "event": "start", "status": "starting"})
 
@@ -810,6 +912,7 @@ def start_run(
                 "runner": resolved_agent,
                 "run_started_at": run["started_at"],
                 **({"review_feedback": review_feedback} if review_feedback else {}),
+                **({"run_note": run_note} if run_note else {}),
             },
         )
     except Exception as exc:

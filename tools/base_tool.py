@@ -286,6 +286,12 @@ class BaseTool(ABC):
     # --- Verification ---
     user_visible_verification: list[str] = []
 
+    # --- Usage license of what the tool produces ---
+    # {"name": ..., "commercial_use": bool, "url": ...}. Empty means the provider's own terms
+    # apply. Agents must not pick a tool with commercial_use False for a commercial video
+    # without telling the user (see the runner prompt).
+    license_terms: dict[str, Any] = {}
+
     # --- Optional telemetry / quality hints for the scoring engine ---
     # If set (0.0-1.0), lib/scoring.py uses these directly instead of falling
     # back to stability-based heuristics. Leave unset unless the tool has a
@@ -369,6 +375,7 @@ class BaseTool(ABC):
             "agent_skills": self.agent_skills,
             "related_skills": self.agent_skills,
             "user_visible_verification": self.user_visible_verification,
+            "license": self.license_terms or None,
             "quality_score": self.quality_score,
             "historical_success_rate": self.historical_success_rate,
             "latency_p50_seconds": self.latency_p50_seconds,

@@ -9,7 +9,7 @@ Use this skill before calling `comfyui_image`, `comfyui_video`, or `comfyui_musi
 
 ## Server Contract
 
-- ComfyUI must be running before the tool can generate. The default server is `http://localhost:8188`; override it with `COMFYUI_SERVER_URL`.
+- ComfyUI must be running before the tool can generate. The default server is `http://127.0.0.1:8188`; override it with `COMFYUI_SERVER_URL`.
 - Running separate ComfyUI instances per capability (different GPU, different model set)? `COMFYUI_IMAGE_SERVER_URL` / `COMFYUI_VIDEO_SERVER_URL` / `COMFYUI_MUSIC_SERVER_URL` each override `COMFYUI_SERVER_URL` for that one tool only. Optional -- a single-server setup needs none of these.
 - Health and hardware status come from `GET /system_stats`.
 - Jobs are submitted to `POST /prompt`, completed outputs are read from `GET /history/{prompt_id}`, and artifact bytes are downloaded with `GET /view`.

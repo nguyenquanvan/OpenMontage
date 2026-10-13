@@ -1,6 +1,8 @@
 """ComfyUI image generation via a local or remote ComfyUI server.
 
-Default workflow: FLUX 2 Dev (NVFP4) with Mistral text encoder.
+Bundled workflows, chosen by what the server actually has:
+- FLUX 2 Dev (NVFP4) with the Mistral text encoder, when its three files are installed;
+- otherwise FLUX.1 schnell GGUF (ComfyUI-GGUF custom node), which fits 8 GB cards.
 Supports custom workflows via the ``workflow_json`` input.
 """
 
@@ -40,6 +42,45 @@ _REQUIRED_MODELS = [
     "mistral_3_small_flux2_fp4_mixed.safetensors",
     "flux2-vae.safetensors",
 ]
+_FLUX2 = "flux2-txt2img"
+_SCHNELL = "flux1-schnell-gguf-txt2img"
+# schnell is distilled for 1-4 steps; more only costs time.
+_SCHNELL_DEFAULT_STEPS = 4
+_SCHNELL_MAX_STEPS = 8
+_LICENSES = {
+    _FLUX2: {
+        "name": "FLUX.2 [dev] Non-Commercial License",
+        "commercial_use": False,
+        "url": "https://huggingface.co/black-forest-labs/FLUX.2-dev",
+    },
+    _SCHNELL: {
+        "name": "Apache-2.0 (FLUX.1 [schnell])",
+        "commercial_use": True,
+        "url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+    },
+}
+
+
+def _first(names: list[str], *needles: str, suffix: str = "") -> str | None:
+    for name in names:
+        lowered = name.lower()
+        if all(needle in lowered for needle in needles) and lowered.endswith(suffix):
+            return name
+    return None
+
+
+def _schnell_models(models: dict[str, list[str]]) -> dict[str, str] | None:
+    """Pick the FLUX.1 schnell GGUF stack from a ComfyUI model listing, or None if incomplete."""
+    clips = models.get("clip_gguf", [])
+    vaes = models.get("vae", [])
+    picked = {
+        "unet_name": _first(models.get("unet_gguf", []), "schnell", suffix=".gguf"),
+        "clip_name1": _first(clips, "t5", suffix=".gguf") or _first(clips, "t5"),
+        "clip_name2": _first(clips, "clip_l"),
+        # FLUX.1 uses ae.safetensors; flux2-vae is a different latent space.
+        "vae_name": "ae.safetensors" if "ae.safetensors" in vaes else _first(vaes, "flux1", "ae"),
+    }
+    return picked if all(picked.values()) else None
 
 
 class ComfyUIImage(BaseTool):
@@ -57,7 +98,7 @@ class ComfyUIImage(BaseTool):
     setup_offer = COMFYUI_SETUP_OFFER
     install_instructions = (
         "Start a ComfyUI server and set COMFYUI_SERVER_URL "
-        "(default http://localhost:8188).\n"
+        "(default http://127.0.0.1:8188).\n"
         "See https://github.com/comfyanonymous/ComfyUI for setup.\n"
         "Running a separate ComfyUI instance for images? Set COMFYUI_IMAGE_SERVER_URL "
         "instead -- it takes priority over COMFYUI_SERVER_URL for this tool only."
@@ -74,6 +115,7 @@ class ComfyUIImage(BaseTool):
     }
     best_for = [
         "local GPU generation without API costs",
+        "8 GB cards through FLUX.1 schnell GGUF (about 10-16 s an image on an RTX 3070)",
         "Blackwell / DGX Spark hardware where diffusers is unsupported",
         "full control over sampling via custom ComfyUI workflows",
     ]
@@ -137,13 +179,23 @@ class ComfyUIImage(BaseTool):
     def __init__(self) -> None:
         self._client = ComfyUIClient(capability="image")
 
+    def _select_stack(self) -> tuple[str | None, dict[str, str] | None, list[str]]:
+        """Return (workflow key, schnell model names, FLUX.2 files missing) for this server."""
+        models = self._client.list_models()
+        available = {name for names in models.values() for name in names}
+        missing = [name for name in _REQUIRED_MODELS if name not in available]
+        if not missing:
+            return _FLUX2, None, []
+        schnell = _schnell_models(models)
+        if schnell:
+            return _SCHNELL, schnell, []
+        return None, None, missing
+
     def get_status(self) -> ToolStatus:
         if not self._client.is_available():
             return ToolStatus.UNAVAILABLE
-        _, missing = self._client.check_models(_REQUIRED_MODELS)
-        if missing:
-            return ToolStatus.DEGRADED
-        return ToolStatus.AVAILABLE
+        stack, _, _ = self._select_stack()
+        return ToolStatus.AVAILABLE if stack else ToolStatus.DEGRADED
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0
@@ -154,7 +206,14 @@ class ComfyUIImage(BaseTool):
     def get_info(self) -> dict[str, Any]:
         info = super().get_info()
         info["setup_offer"] = self.setup_offer
-        info["bundled_model_stack"] = BUNDLED_MODEL_STACKS["flux2-txt2img"]
+        info["bundled_model_stack"] = BUNDLED_MODEL_STACKS[_FLUX2]
+        info["bundled_model_stacks"] = {key: BUNDLED_MODEL_STACKS[key] for key in (_FLUX2, _SCHNELL)}
+        info["workflow_licenses"] = _LICENSES
+        if info["status"] == ToolStatus.AVAILABLE.value:
+            stack, schnell, _ = self._select_stack()
+            info["active_workflow"] = stack
+            info["active_models"] = schnell
+            info["license"] = _LICENSES.get(stack)
         return info
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
@@ -174,19 +233,24 @@ class ComfyUIImage(BaseTool):
                 error=self._client.unavailable_reason(),
             )
 
+        stack, schnell = None, None
         if not custom_workflow:
-            _, missing = self._client.check_models(_REQUIRED_MODELS)
-            if missing:
+            stack, schnell, missing = self._select_stack()
+            if stack is None:
+                payload = missing_models_payload(
+                    missing,
+                    workflow_key=_FLUX2,
+                    workflow_name=f"{_FLUX2}.json",
+                )
+                payload["alternative_stack"] = BUNDLED_MODEL_STACKS[_SCHNELL]
                 return ToolResult(
                     success=False,
-                    data=missing_models_payload(
-                        missing,
-                        workflow_key="flux2-txt2img",
-                        workflow_name="flux2-txt2img.json",
-                    ),
+                    data=payload,
                     error=(
                         f"ComfyUI server is running but missing required models: "
                         f"{', '.join(missing)}.\n"
+                        f"Alternatively install the FLUX.1 schnell GGUF stack (data.alternative_stack), "
+                        f"which fits 8 GB cards.\n"
                         f"See data.missing_models for destination hints and download URLs."
                     ),
                 )
@@ -203,8 +267,22 @@ class ComfyUIImage(BaseTool):
             if custom_workflow:
                 workflow = self._load_custom_workflow(inputs)
                 output_node = str(inputs["output_node"])
+            elif stack == _SCHNELL:
+                steps = min(int(inputs.get("steps") or _SCHNELL_DEFAULT_STEPS), _SCHNELL_MAX_STEPS)
+                guidance = None
+                workflow = ComfyUIClient.load_workflow(_WORKFLOWS / f"{_SCHNELL}.json")
+                workflow = ComfyUIClient.patch_workflow(workflow, {
+                    "1": {"unet_name": schnell["unet_name"]},
+                    "2": {"clip_name1": schnell["clip_name1"], "clip_name2": schnell["clip_name2"]},
+                    "3": {"vae_name": schnell["vae_name"]},
+                    "4": {"text": inputs["prompt"]},
+                    "6": {"width": width, "height": height, "batch_size": 1},
+                    "7": {"seed": seed, "steps": steps},
+                    "9": {"filename_prefix": output_path.stem},
+                })
+                output_node = "9"
             else:
-                workflow = ComfyUIClient.load_workflow(_WORKFLOWS / "flux2-txt2img.json")
+                workflow = ComfyUIClient.load_workflow(_WORKFLOWS / f"{_FLUX2}.json")
                 workflow = ComfyUIClient.patch_workflow(workflow, {
                     "4": {"text": inputs["prompt"]},
                     "5": {"guidance": guidance},
@@ -216,7 +294,7 @@ class ComfyUIImage(BaseTool):
                 output_node = "13"
 
             provenance = self._workflow_provenance(
-                inputs, custom_workflow, output_node, workflow
+                inputs, custom_workflow, output_node, workflow, stack, schnell
             )
             paths = self._client.generate(
                 workflow, output_node=output_node, dest=output_path, timeout=600,
@@ -227,7 +305,7 @@ class ComfyUIImage(BaseTool):
         except Exception as exc:
             return ToolResult(success=False, error=f"ComfyUI image generation failed: {exc}")
 
-        model_name = self._model_name(inputs, custom_workflow)
+        model_name = self._model_name(inputs, custom_workflow, schnell)
         return ToolResult(
             success=True,
             data={
@@ -241,6 +319,7 @@ class ComfyUIImage(BaseTool):
                 "output": str(paths[0]),
                 "format": "png",
                 "workflow_provenance": provenance,
+                "license": _LICENSES.get(stack),
             },
             artifacts=[str(p) for p in paths],
             cost_usd=0.0,
@@ -256,9 +335,9 @@ class ComfyUIImage(BaseTool):
         return ComfyUIClient.load_workflow(Path(inputs["workflow_path"]))
 
     @staticmethod
-    def _model_name(inputs: dict[str, Any], custom_workflow: bool) -> str:
+    def _model_name(inputs: dict[str, Any], custom_workflow: bool, schnell: dict[str, str] | None = None) -> str:
         if not custom_workflow:
-            return "flux2-dev-nvfp4"
+            return schnell["unet_name"] if schnell else "flux2-dev-nvfp4"
         return (
             inputs.get("workflow_model")
             or inputs.get("model")
@@ -272,13 +351,23 @@ class ComfyUIImage(BaseTool):
         custom_workflow: bool,
         output_node: str,
         workflow: dict[str, Any],
+        stack: str | None = _FLUX2,
+        schnell: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         if not custom_workflow:
+            stack = stack or _FLUX2
+            models = model_stack(stack, inputs)
+            if schnell:
+                # Record the files the server really has (quantisation can differ from the default).
+                by_role = {"diffusion_model": "unet_name", "text_encoder": "clip_name1", "clip": "clip_name2", "vae": "vae_name"}
+                for item in models:
+                    if item.get("role") in by_role:
+                        item["name"] = schnell[by_role[item["role"]]]
             return {
                 "source": "bundled",
-                "workflow": "flux2-txt2img.json",
+                "workflow": f"{stack}.json",
                 "workflow_hash_sha256": workflow_hash(workflow),
-                "model_stack": model_stack("flux2-txt2img", inputs),
+                "model_stack": models,
                 "output_node": output_node,
             }
         return {

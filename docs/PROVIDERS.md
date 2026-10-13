@@ -78,7 +78,7 @@ LOCAL_IMAGE_MODEL=           # Optional diffusers model id, e.g. stabilityai/sta
 WHISPER_MODEL_SIZE=          # tiny, base, small, medium, large-v2, large-v3
 PIPER_MODEL=                 # Optional Piper voice model path/name
 
-# COMFYUI (optional overrides; localhost:8188 is the default)
+# COMFYUI (optional overrides; 127.0.0.1:8188 is the default)
 COMFYUI_SERVER_URL=          # Local ComfyUI server for shared workflows
 COMFYUI_VIDEO_SERVER_URL=    # Optional video-specific ComfyUI server
 COMFYUI_IMAGE_SERVER_URL=    # Optional image-specific ComfyUI server
@@ -1214,7 +1214,7 @@ piper --download-dir ~/.piper/models --model en_US-lessac-medium
 **Tool:** `comfyui_video`
 
 **Optional env vars:** `COMFYUI_SERVER_URL` (default
-`http://localhost:8188`) and `COMFYUI_VIDEO_SERVER_URL` (video-specific
+`http://127.0.0.1:8188`) and `COMFYUI_VIDEO_SERVER_URL` (video-specific
 override).
 
 The bundled WAN 2.2 workflows and caller-supplied local workflows execute on

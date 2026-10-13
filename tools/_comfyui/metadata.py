@@ -11,7 +11,7 @@ COMFYUI_SETUP_OFFER: dict[str, Any] = {
     "kind": "local_server",
     "fix_complexity": "1-minute env-var if ComfyUI is already running; otherwise local install",
     "env_var": "COMFYUI_SERVER_URL",
-    "default_url": "http://localhost:8188",
+    "default_url": "http://127.0.0.1:8188",
     "health_check": "GET /system_stats",
     "what_it_unlocks": [
         "free local image generation through ComfyUI workflows",
@@ -86,6 +86,34 @@ BUNDLED_MODEL_STACKS: dict[str, list[dict[str, Any]]] = {
                 "https://huggingface.co/Comfy-Org/flux2-dev/blob/main/"
                 "split_files/vae/flux2-vae.safetensors"
             ),
+        },
+    ],
+    "flux1-schnell-gguf-txt2img": [
+        {
+            "role": "diffusion_model",
+            "name": "flux1-schnell-Q4_K_S.gguf",
+            "quantization": "GGUF Q4_K_S",
+            "destination_hint": "ComfyUI/models/unet/ (needs the ComfyUI-GGUF custom node)",
+            "download_url": "https://huggingface.co/city96/FLUX.1-schnell-gguf",
+        },
+        {
+            "role": "text_encoder",
+            "name": "t5-v1_1-xxl-encoder-Q4_K_M.gguf",
+            "quantization": "GGUF Q4_K_M",
+            "destination_hint": "ComfyUI/models/clip/",
+            "download_url": "https://huggingface.co/city96/t5-v1_1-xxl-encoder-gguf",
+        },
+        {
+            "role": "clip",
+            "name": "clip_l.safetensors",
+            "destination_hint": "ComfyUI/models/clip/",
+            "download_url": "https://huggingface.co/comfyanonymous/flux_text_encoders",
+        },
+        {
+            "role": "vae",
+            "name": "ae.safetensors",
+            "destination_hint": "ComfyUI/models/vae/",
+            "download_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
         },
     ],
     "wan22-t2v-4step": [

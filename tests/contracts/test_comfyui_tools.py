@@ -135,6 +135,7 @@ class TestContract:
 
 EXPECTED_WORKFLOWS = [
     "flux2-txt2img.json",
+    "flux1-schnell-gguf-txt2img.json",
     "wan22-i2v-4step.json",
     "wan22-t2v-4step.json",
     "ace-step-1-t2a.json",
@@ -422,7 +423,7 @@ class TestMultiServer:
         monkeypatch.setenv("COMFYUI_IMAGE_SERVER_URL", "http://image-gpu:8188")
         monkeypatch.delenv("COMFYUI_VIDEO_SERVER_URL", raising=False)
         video_client = ComfyUIClient(capability="video")
-        assert video_client.server_url == "http://localhost:8188"
+        assert video_client.server_url == "http://127.0.0.1:8188"
 
     def test_explicit_server_url_wins_over_capability_env_var(self, monkeypatch):
         from tools._comfyui.client import ComfyUIClient
@@ -850,10 +851,14 @@ class TestCustomWorkflowContract:
     def test_image_missing_models_are_structured(self):
         tool = ComfyUIImage()
         tool._client.is_available = lambda: True
-        tool._client.check_models = lambda required: (
-            [],
-            ["flux2-vae.safetensors"],
-        )
+        # FLUX.2 lacks its VAE and no FLUX.1 schnell GGUF stack is installed either.
+        tool._client.list_models = lambda: {
+            "diffusion_models": ["flux2-dev-nvfp4.safetensors"],
+            "clip": ["mistral_3_small_flux2_fp4_mixed.safetensors"],
+            "vae": [],
+            "unet_gguf": [],
+            "clip_gguf": [],
+        }
 
         result = tool.execute({"prompt": "test"})
 
@@ -1119,7 +1124,7 @@ class TestComfyUISetupOffer:
         offer = summary["setup_offers"][0]
         assert offer["tool"] == "comfyui_image"
         assert offer["env_var"] == "COMFYUI_SERVER_URL"
-        assert offer["default_url"] == "http://localhost:8188"
+        assert offer["default_url"] == "http://127.0.0.1:8188"
         assert offer["health_check"] == "GET /system_stats"
 
 

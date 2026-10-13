@@ -927,7 +927,8 @@ async function openRunModal() {
     class: "run-form",
     onsubmit: async (event) => {
       event.preventDefault();
-      const brief = form.querySelector("textarea").value.trim();
+      const brief = form.querySelector("textarea[name=brief]").value.trim();
+      const runNote = form.querySelector("textarea[name=run_note]").value.trim();
       const agent = agentSelect.value;
       const model = form.querySelector("input[name=model]").value.trim();
       const allowAutomation = form.querySelector("input[type=checkbox]").checked;
@@ -953,7 +954,7 @@ async function openRunModal() {
         const response = await fetch(`/api/project/${encodedProjectId}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brief, agent, model, allow_automation: allowAutomation }),
+          body: JSON.stringify({ brief, run_note: runNote, agent, model, allow_automation: allowAutomation }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "Không khởi chạy được workflow");
@@ -973,6 +974,15 @@ async function openRunModal() {
     el("label", {},
       el("span", {}, "Brief sản xuất"),
       el("textarea", { name: "brief", rows: "6", placeholder: "Ví dụ: Tạo video 60 giây giới thiệu sản phẩm cho người mới…" }, currentBrief),
+    ),
+    el("label", {},
+      el("span", {}, "Ghi chú cho lần chạy này (tuỳ chọn)"),
+      el("textarea", {
+        name: "run_note",
+        rows: "3",
+        maxlength: "4000",
+        placeholder: "Trả lời câu hỏi agent để lại hoặc đổi một quyết định. Ví dụ: Dùng ComfyUI đang chạy ở máy này, đổi sang FLUX.1 schnell…",
+      }),
     ),
     el("div", { class: "run-form-grid" },
       el("label", {},

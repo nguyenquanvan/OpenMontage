@@ -121,6 +121,49 @@ def test_start_run_resumes_at_next_incomplete_stage(tmp_path, monkeypatch):
     assert "awaiting_human" in prompt
 
 
+def test_run_note_from_the_start_form_reaches_the_agent_prompt(tmp_path, monkeypatch):
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    monkeypatch.setattr(state_mod, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(server_mod, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(server_mod, "_summary_cache", {})
+    monkeypatch.setattr(server_mod, "_PROJECTS_ROOT_STR", os.path.normcase(str(projects.resolve())))
+    monkeypatch.setattr(runner_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(runner_mod.subprocess, "Popen", lambda *args, **kwargs: _FinishedProcess())
+    monkeypatch.setattr(runner_mod, "_watch_process", lambda *args: None)
+
+    async def no_watch():
+        return None
+
+    monkeypatch.setattr(server_mod, "_watch_projects", no_watch)
+    note = "Dùng ComfyUI đang chạy ở máy này, đổi sang FLUX.1 schnell."
+    with TestClient(server_mod.create_app()) as client:
+        assert client.post(
+            "/api/projects",
+            json={"project_id": "note-test", "title": "Note", "pipeline_type": "cinematic"},
+        ).status_code == 201
+        too_long = client.post(
+            "/api/project/note-test/run",
+            json={"brief": "Phim ngắn", "run_note": "x" * 4001, "agent": "codex", "allow_automation": True},
+        )
+        assert too_long.status_code == 400
+        started = client.post(
+            "/api/project/note-test/run",
+            json={"brief": "Phim ngắn về sói", "run_note": f"  {note}  ", "agent": "codex", "allow_automation": True},
+        )
+        assert started.status_code == 202
+
+    project = projects / "note-test"
+    prompt = (project / "agent_prompt.md").read_text(encoding="utf-8")
+    assert "## Ghi chú của người dùng cho lần chạy này" in prompt
+    assert note in prompt
+    assert prompt.index("## Brief người dùng") < prompt.index(note) < prompt.index("## Giao thức bắt buộc")
+    assert json.loads((project / "agent_run.json").read_text(encoding="utf-8"))["run_note"] == note
+    assert json.loads((project / "project.json").read_text(encoding="utf-8"))["brief"] == "Phim ngắn về sói"
+    checkpoint = json.loads((project / "checkpoint_research.json").read_text(encoding="utf-8"))
+    assert checkpoint["metadata"]["run_note"] == note
+
+
 def test_start_run_requires_explicit_automation_confirmation(tmp_path, monkeypatch):
     projects = tmp_path / "projects"
     projects.mkdir()
@@ -336,6 +379,95 @@ def test_claude_auth_failure_is_reported_actionably(tmp_path):
 
     assert "Claude Code chưa xác thực" in message
     assert "claude auth login" in message
+
+
+def _write_stream_json_log(project, events):
+    project.mkdir(parents=True)
+    (project / "agent_run.log").write_text(
+        "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events),
+        encoding="utf-8",
+    )
+
+
+_CLAUDE_INIT_EVENT = {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "9b2e4c1a-401f-4d3b-8c2a-5e6f70401a2b",
+    "tools": ["Bash", "Read", "Write"],
+    "skills": ["anthropic-skills:deep-research", "anthropic-skills:doc-coauthoring"],
+    "uuid": "c3d401e2-0a1b-4c5d-9e8f-401401401401",
+}
+
+
+def test_stream_json_noise_is_not_reported_as_auth_or_usage_failure(tmp_path):
+    project = tmp_path / "projects" / "noisy-success-run"
+    _write_stream_json_log(project, [
+        _CLAUDE_INIT_EVENT,
+        {
+            "type": "user",
+            "message": {"content": [{
+                "type": "tool_result",
+                "tool_use_id": "toolu_01",
+                "content": "GET /v1/clips 401 Unauthorized (oauth scope)\nPexels usage limit 80%\nLỖI: thử nguồn khác",
+            }]},
+            "uuid": "e401b2c3-1d2e-4f5a-8b9c-0d1e2f3a4b5c",
+        },
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "stop_reason": "end_turn",
+            "result": "Phim đã render xong, đang chờ bạn duyệt.",
+            "session_id": "9b2e4c1a-401f-4d3b-8c2a-5e6f70401a2b",
+        },
+    ])
+
+    message = runner_mod._run_failure_detail(project, "generic failure")
+
+    assert message == "generic failure"
+
+
+def test_claude_stream_json_auth_failure_result_is_reported_actionably(tmp_path):
+    project = tmp_path / "projects" / "claude-stream-auth-run"
+    api_error = (
+        'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error",'
+        '"message":"OAuth access token is invalid"},"request_id":"req_011CU9"}'
+    )
+    _write_stream_json_log(project, [
+        _CLAUDE_INIT_EVENT,
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": api_error}]},
+            "error": "authentication_failed",
+        },
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 401,
+            "result": api_error,
+        },
+    ])
+
+    message = runner_mod._run_failure_detail(project, "generic failure")
+
+    assert "Claude Code chưa xác thực" in message
+    assert "claude auth login" in message
+
+
+def test_codex_turn_failed_usage_limit_is_reported_actionably(tmp_path):
+    project = tmp_path / "projects" / "codex-quota-run"
+    _write_stream_json_log(project, [
+        {"type": "thread.started", "thread_id": "0199a401-7c2e-7d10-9a3b-5e6f7a8b9c0d"},
+        {
+            "type": "turn.failed",
+            "error": {"message": "You've hit your usage limit. Try again in 3 days."},
+        },
+    ])
+
+    message = runner_mod._run_failure_detail(project, "generic failure")
+
+    assert "hết hạn mức sử dụng" in message
 
 
 def test_health_research_blocks_offline_ollama(tmp_path, monkeypatch):

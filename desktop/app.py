@@ -18,17 +18,37 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
+if __package__ in (None, "") and not getattr(sys, "frozen", False):
+    # Run as `python desktop/app.py` (agents call --run-tool this way from a source checkout).
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from lib.app_version import APP_NAME, APP_VERSION
 from lib.runtime import configure_bundled_runtime
 
 
 LEGACY_APP_NAME = "OpenMontage"
 DEFAULT_PORT = 4750
+LOG_MAX_BYTES = 5 * 1024 * 1024
 _STDIO_SINKS: list[Any] = []
 
 
 def _open_stdio_sink() -> Any:
-    return open(os.devnull, "w", encoding="utf-8")
+    """Windowed builds have no console: keep their stdout/stderr in <data>/logs/desktop.log.
+
+    The previous log moves to desktop.log.1 once it passes LOG_MAX_BYTES; if the
+    data folder cannot be written, output is discarded as before.
+    """
+    try:
+        log_dir = user_data_dir() / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / "desktop.log"
+        if path.exists() and path.stat().st_size > LOG_MAX_BYTES:
+            os.replace(path, log_dir / "desktop.log.1")
+        sink = open(path, "a", encoding="utf-8", errors="backslashreplace", buffering=1)
+        sink.write(f"\n--- {APP_NAME} {APP_VERSION} started {time.strftime('%Y-%m-%d %H:%M:%S')} pid {os.getpid()}\n")
+        return sink
+    except OSError:
+        return open(os.devnull, "w", encoding="utf-8")
 
 
 def ensure_standard_streams() -> None:
@@ -38,9 +58,9 @@ def ensure_standard_streams() -> None:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name)
         if stream is None:
-            sink = _open_stdio_sink()
-            _STDIO_SINKS.append(sink)
-            setattr(sys, stream_name, sink)
+            if not _STDIO_SINKS:
+                _STDIO_SINKS.append(_open_stdio_sink())
+            setattr(sys, stream_name, _STDIO_SINKS[0])
             continue
         reconfigure = getattr(stream, "reconfigure", None)
         if callable(reconfigure):
@@ -203,12 +223,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--prompt-file", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--model", help=argparse.SUPPRESS)
+    tools = parser.add_argument_group("Chạy tool của app (dành cho agent)")
+    tools.add_argument("--list-tools", action="store_true", help="Ghi danh sách tool và trạng thái ra JSON")
+    tools.add_argument("--describe-tool", metavar="TÊN", help="Ghi thông tin đầy đủ và input_schema của một tool")
+    tools.add_argument("--run-tool", metavar="TÊN", help="Chạy một tool với input JSON")
+    tools.add_argument("--tool-input", type=Path, metavar="FILE", help="File JSON input cho --run-tool")
+    tools.add_argument("--tool-output", type=Path, metavar="FILE", help="Nơi ghi kết quả JSON")
+    tools.add_argument("--allow-cost", action="store_true", help="Cho phép chạy tool có chi phí")
     args = parser.parse_args(argv)
 
     data_dir = user_data_dir()
     configure_user_paths(data_dir)
     configure_bundled_runtime()
     configure_agent_path()
+    if args.list_tools or args.describe_tool or args.run_tool:
+        from backlot.tool_cli import cli_main
+
+        return cli_main(args)
     if args.ollama_worker:
         if args.project_dir is None or args.prompt_file is None:
             parser.error("--ollama-worker requires --project-dir and --prompt-file")

@@ -28,6 +28,41 @@ def test_standard_streams_are_reconfigured_for_utf8(monkeypatch):
     assert desktop_app.os.environ["PYTHONIOENCODING"] == "utf-8"
 
 
+def test_windowed_build_streams_share_one_log_file_in_the_data_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENMONTAGE_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    monkeypatch.setattr(desktop_app, "_STDIO_SINKS", [])
+
+    desktop_app.ensure_standard_streams()
+    try:
+        assert sys.stdout is sys.stderr
+        print("backend warning: ổ đĩa đầy", file=sys.stderr)
+        sys.stderr.flush()
+    finally:
+        sink = desktop_app._STDIO_SINKS[0]
+        monkeypatch.setattr(sys, "stdout", None)
+        monkeypatch.setattr(sys, "stderr", None)
+        sink.close()
+
+    log = (tmp_path / "logs" / "desktop.log").read_text(encoding="utf-8")
+    assert f"{desktop_app.APP_NAME} {desktop_app.APP_VERSION} started" in log
+    assert "backend warning: ổ đĩa đầy" in log
+
+
+def test_desktop_log_rolls_over_when_too_large(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENMONTAGE_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(desktop_app, "LOG_MAX_BYTES", 10)
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "desktop.log").write_text("x" * 50, encoding="utf-8")
+
+    desktop_app._open_stdio_sink().close()
+
+    assert (logs / "desktop.log.1").read_text(encoding="utf-8") == "x" * 50
+    assert "started" in (logs / "desktop.log").read_text(encoding="utf-8")
+
+
 def test_configure_agent_path_adds_existing_user_bin(tmp_path, monkeypatch):
     home = tmp_path / "home"
     user_bin = home / ".local" / "bin"

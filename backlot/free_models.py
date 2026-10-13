@@ -32,7 +32,7 @@ FREE_MODEL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "model": "Flux 2 hoặc workflow tự chọn",
         "cost": "0 USD / lượt",
         "requirements": "ComfyUI đang chạy và model weights đã tải",
-        "setup": "Cài ComfyUI, chạy tại http://localhost:8188",
+        "setup": "Cài ComfyUI, chạy tại http://127.0.0.1:8188",
         "env": ["COMFYUI_SERVER_URL", "COMFYUI_IMAGE_SERVER_URL"],
     },
     {
@@ -68,7 +68,7 @@ FREE_MODEL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "model": "WAN 2.2 hoặc workflow tự chọn",
         "cost": "0 USD / lượt",
         "requirements": "ComfyUI đang chạy và model weights đã tải",
-        "setup": "Cài ComfyUI, chạy tại http://localhost:8188",
+        "setup": "Cài ComfyUI, chạy tại http://127.0.0.1:8188",
         "env": ["COMFYUI_SERVER_URL", "COMFYUI_VIDEO_SERVER_URL"],
     },
     {

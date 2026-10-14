@@ -44,6 +44,13 @@ for package in ("webview", "tools", "backlot"):
     hiddenimports.extend(collect_submodules(package))
     datas.extend(collect_data_files(package))
 
+# The reference-video tools import these only inside execute(), so PyInstaller
+# never sees them; without this the packaged app has no yt_dlp and every
+# reference analysis comes back empty.
+for package in ("yt_dlp", "youtube_transcript_api"):
+    hiddenimports.extend(collect_submodules(package))
+    datas.extend(collect_data_files(package))
+
 analysis = Analysis(
     [str(ROOT / "desktop" / "app.py")],
     pathex=[str(ROOT)],

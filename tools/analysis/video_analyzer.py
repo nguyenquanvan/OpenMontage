@@ -578,6 +578,21 @@ class VideoAnalyzer(BaseTool):
         if keyframe_dir.exists():
             artifacts.append(str(keyframe_dir))
 
+        # A brief with no transcript, scenes or keyframes describes nothing;
+        # reporting it as success made agents treat an empty analysis as done.
+        usable = transcript_data is not None or bool(scenes) or bool(keyframes)
+        if not usable:
+            return ToolResult(
+                success=False,
+                data=brief,
+                artifacts=artifacts,
+                error=(
+                    "Reference analysis produced no transcript, scenes or keyframes. "
+                    + ("; ".join(steps_failed) if steps_failed else "The source yielded no media.")
+                ),
+                duration_seconds=round(elapsed, 2),
+            )
+
         return ToolResult(
             success=True,
             data=brief,

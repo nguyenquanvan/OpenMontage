@@ -9,6 +9,8 @@ requests>=2.31
 google-auth>=2.0       # service-account auth for Google TTS + Imagen (Vertex AI)
 google-genai>=1.0.0    # Gemini Developer API clients for Lyria, Veo, and Gemini Omni
 openai>=2.44.0         # Videos API support for Sora 2
+yt-dlp>=2025.9.26      # video_downloader / video_analyzer: reference-video metadata and download
+youtube-transcript-api>=1.0  # transcript_fetcher: reference-video captions
 
 # Backlot - the living storyboard (local board server)
 fastapi>=0.110

@@ -205,10 +205,11 @@ def paddle_ocr(data: dict) -> None:
 
 
 def depth_anything(data: dict) -> None:
+    import torch
     from PIL import Image
     from transformers import pipeline
 
-    estimator = pipeline("depth-estimation", model=data["model_dir"])
+    estimator = pipeline("depth-estimation", model=data["model_dir"], device=0 if torch.cuda.is_available() else -1)
     result = estimator(Image.open(data["input_path"]).convert("RGB"))
     output = Path(data["output_path"])
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -233,11 +234,29 @@ def rembg_remove(data: dict) -> None:
     _result(output=str(output), model=data.get("model", "u2net"))
 
 
+def _torchvision_functional_tensor_shim() -> None:
+    """basicsr (Real-ESRGAN, GFPGAN) imports a torchvision module removed in 0.17; serve it from its new home."""
+    try:
+        import torchvision.transforms.functional_tensor  # noqa: F401
+    except ImportError:
+        import types
+
+        from torchvision.transforms import functional
+
+        shim = types.ModuleType("torchvision.transforms.functional_tensor")
+        shim.rgb_to_grayscale = functional.rgb_to_grayscale
+        sys.modules[shim.__name__] = shim
+
+
 def realesrgan_upscale(data: dict) -> None:
     import cv2
+    import torch
+
+    _torchvision_functional_tensor_shim()
     from basicsr.archs.rrdbnet_arch import RRDBNet
     from realesrgan import RealESRGANer
 
+    cuda = torch.cuda.is_available()
     scale = int(data.get("scale", 4))
     model_name = data.get("model", "RealESRGAN_x4plus")
     blocks = 6 if "anime_6B" in model_name else 23
@@ -248,10 +267,11 @@ def realesrgan_upscale(data: dict) -> None:
         scale=network_scale,
         model_path=model_path,
         model=network,
-        tile=int(data.get("tile", 0)),
+        # Whole-frame 4x upscales do not fit an 8 GB card next to ComfyUI; tiles keep the GPU path usable.
+        tile=int(data.get("tile", 0)) or (512 if cuda else 0),
         tile_pad=10,
         pre_pad=0,
-        half=False,
+        half=cuda,
     )
     image = cv2.imread(data["input_path"], cv2.IMREAD_UNCHANGED)
     if image is None:
@@ -265,6 +285,8 @@ def realesrgan_upscale(data: dict) -> None:
 
 def face_restore(data: dict) -> None:
     import cv2
+
+    _torchvision_functional_tensor_shim()
     from gfpgan import GFPGANer
 
     model_name = data.get("model", "GFPGAN")
@@ -294,21 +316,26 @@ def face_restore(data: dict) -> None:
 
 
 def sam2_segment(data: dict) -> None:
-    import numpy as np
+    # Model Center installs the Hugging Face transformers snapshot (model.safetensors), not the sam2 .pt checkpoint.
+    import torch
     from PIL import Image
-    from sam2.sam2_image_predictor import SAM2ImagePredictor
+    from transformers import Sam2Model, Sam2Processor
 
-    predictor = SAM2ImagePredictor.from_pretrained(data["model_dir"])
-    image = np.asarray(Image.open(data["input_path"]).convert("RGB"))
-    predictor.set_image(image)
-    points = np.asarray(data["points"], dtype=np.float32)
-    labels = np.asarray(data.get("labels") or [1] * len(points), dtype=np.int32)
-    masks, scores, _ = predictor.predict(point_coords=points, point_labels=labels, multimask_output=False)
-    mask = (masks[0] * 255).astype("uint8")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = Sam2Model.from_pretrained(data["model_dir"]).to(device)
+    processor = Sam2Processor.from_pretrained(data["model_dir"])
+    image = Image.open(data["input_path"]).convert("RGB")
+    points = [[float(x), float(y)] for x, y in data["points"]]
+    labels = [int(label) for label in (data.get("labels") or [1] * len(points))]
+    inputs = processor(images=image, input_points=[[points]], input_labels=[[labels]], return_tensors="pt").to(device)
+    with torch.no_grad():
+        outputs = model(**inputs, multimask_output=False)
+    masks = processor.post_process_masks(outputs.pred_masks.cpu(), inputs["original_sizes"])[0]
+    mask = (masks[0, 0].numpy() * 255).astype("uint8")
     output = Path(data["output_path"])
     output.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(mask).save(output)
-    _result(output=str(output), score=float(scores[0]))
+    _result(output=str(output), score=float(outputs.iou_scores.flatten()[0]))
 
 
 def musicgen(data: dict) -> None:

@@ -794,7 +794,7 @@ If you'd like to go further, [sponsor the project](https://github.com/sponsors/c
 MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
 
-Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.8` · build `20261014.5`**. App hiển thị
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.9` · build `20261014.6`**. App hiển thị
 phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
 `GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
 trong `lib/app_version.py`.
@@ -909,6 +909,14 @@ nghiên cứu MusicGen, Qwen VL, CodeFormer, Wav2Lip.
 Model được lưu trong thư mục dữ liệu riêng của người dùng, không nằm trong app
 bundle. App kiểm tra dung lượng trước khi tải và luôn giữ ít nhất 12 GB dự phòng.
 File tải dở dùng đuôi `.part` và sẽ được tiếp tục ở lần tải sau.
+
+Trên máy có card NVIDIA, runtime cài mới nhận PyTorch bản CUDA khớp driver (uv
+`--torch-backend auto`), nên Real-ESRGAN, SAM 2.1, Depth Anything và Florence-2 chạy bằng card.
+Kokoro vẫn chạy CPU vì đọc nhanh hơn thời gian thực và để card cho ComfyUI. Runtime cài từ bản cũ
+(PyTorch chỉ có CPU) hiện nút **⚡ Chuyển sang card NVIDIA**: app dựng runtime mới bên cạnh (tải
+khoảng 2,5 GB, model giữ nguyên) và chỉ thay khi dựng xong; app không tự làm việc này. Khi card hết
+bộ nhớ (thường vì ComfyUI đang giữ), lượt chạy đó tự chạy lại bằng CPU. MuseTalk chỉ cài được trên
+máy có card NVIDIA: runtime của nó dùng PyTorch 2.0.1 + CUDA 11.8 cùng mmcv/mmdet/mmpose cho DWPose.
 
 Các model quá lớn hoặc không phù hợp cấu hình máy sẽ bị khóa nút và hiển thị lý
 do. FLUX Dev/LTX có điều khoản giấy phép riêng; người dùng phải xác nhận trước

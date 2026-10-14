@@ -255,6 +255,8 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
             "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/"
             "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
         ),
+        # 82M parameters narrate faster than real time on CPU, and the GPU is usually busy with ComfyUI.
+        "torch_backend": "cpu",
         "settings": {"KOKORO_MODEL_DIR": "{target}"},
     },
     "realesrgan": {
@@ -342,7 +344,8 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
         "source_url": "https://huggingface.co/microsoft/Florence-2-base",
         "tier": "essential",
         "snapshot_exclude": ("pytorch_model.bin", "README.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "SUPPORT.md"),
-        "runtime_packages": ("torch", "torchvision", "transformers>=4.49", "accelerate"),
+        # Florence-2's trust_remote_code model fails on transformers 4.50+ ('forced_bos_token_id'); it imports timm and einops.
+        "runtime_packages": ("torch", "torchvision", "transformers>=4.49,<4.50", "accelerate", "timm", "einops"),
         "settings": {"FLORENCE_MODEL_DIR": "{target}"},
     },
     "paddleocr": {
@@ -391,7 +394,7 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
         "source_url": "https://github.com/facebookresearch/sam2",
         "tier": "advanced",
         "snapshot_exclude": ("sam2.1_hiera_tiny.pt", "README.md"),
-        "runtime_packages": ("torch>=2.5.1", "torchvision>=0.20.1", "git+https://github.com/facebookresearch/sam2.git"),
+        "runtime_packages": ("torch>=2.5.1", "torchvision>=0.20.1", "transformers>=4.56", "pillow"),
         "settings": {"SAM2_MODEL_DIR": "{target}"},
     },
     "musetalk-lipsync": {
@@ -421,10 +424,26 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
         ),
         "python_version": "3.10",
         "runtime_packages": (
-            "torch", "torchvision", "diffusers==0.30.2", "accelerate==0.28.0",
-            "opencv-python-headless==4.9.0.80", "soundfile==0.12.1", "transformers==4.39.2",
+            "torch==2.0.1", "torchvision==0.15.2", "torchaudio==2.0.2", "diffusers==0.30.2", "accelerate==0.28.0",
+            "opencv-python==4.9.0.80", "soundfile==0.12.1", "transformers==4.39.2",
             "huggingface_hub==0.30.2", "librosa==0.11.0", "einops==0.8.1", "omegaconf",
             "ffmpeg-python", "moviepy", "gdown", "imageio[ffmpeg]",
+        ),
+        # MuseTalk's face landmarks come from DWPose (mmpose), whose CUDA ops only ship prebuilt for torch 2.0 + cu118.
+        "torch_backend": "cu118",
+        "requires_nvidia": True,
+        "runtime_install_steps": (
+            ("torch==2.0.1", "torchvision==0.15.2", "torchaudio==2.0.2"),
+            ("numpy==1.23.5", "diffusers==0.30.2", "accelerate==0.28.0", "opencv-python==4.9.0.80",
+             "soundfile==0.12.1", "transformers==4.39.2", "huggingface_hub==0.30.2", "librosa==0.11.0",
+             "einops==0.8.1", "omegaconf", "ffmpeg-python", "moviepy", "gdown", "imageio[ffmpeg]"),
+            # mmengine still imports pkg_resources, which setuptools 81 removed.
+            ("mmengine", "setuptools<81"),
+            ("mmcv==2.0.1", "--only-binary", "mmcv",
+             "--find-links", "https://download.openmmlab.com/mmcv/dist/cu118/torch2.0/index.html"),
+            ("mmdet==3.1.0",),
+            # mmpose pulls chumpy, whose setup.py imports pip; build it against the runtime's seeded pip.
+            ("mmpose==1.1.0", "--no-build-isolation-package", "chumpy"),
         ),
         "settings": {"MUSETALK_MODEL_DIR": "{target}"},
     },
@@ -794,6 +813,8 @@ def install_catalog() -> list[dict[str, Any]]:
             "runtime_target": str(_runtime_root(model_id)) if spec.get("runtime_packages") else None,
             "requires": list(spec.get("requires") or ()),
             "requirements_ready": all(_requirement_ready(dep) for dep in (spec.get("requires") or ())),
+            "torch_build": runtime_torch_build(model_id) if runtime_installed else None,
+            "gpu_upgrade_available": bool(installed and runtime_required and _gpu_upgrade_available(model_id, spec)),
         })
     return result
 
@@ -870,9 +891,35 @@ def start_runtime_repair(model_id: str) -> dict[str, Any]:
     return dict(job)
 
 
+def _rebuild_runtime(model_id: str, spec: dict[str, Any]) -> str | None:
+    """Build a fresh runtime beside the live one and swap it in only when the build succeeded."""
+    live = _runtime_root(model_id)
+    fresh = live.with_name(live.name + ".rebuild")
+    retired = live.with_name(live.name + ".old")
+    for leftover in (fresh, retired):
+        if leftover.exists():
+            shutil.rmtree(leftover, ignore_errors=True)
+    try:
+        _install_runtime(model_id, spec, root=fresh)
+    except Exception:
+        shutil.rmtree(fresh, ignore_errors=True)
+        raise
+    if live.exists():
+        try:
+            live.rename(retired)
+        except OSError as exc:
+            shutil.rmtree(fresh, ignore_errors=True)
+            raise RuntimeError(
+                f"Runtime cũ đang được dùng nên chưa thay được ({exc}); hãy dừng workflow đang chạy rồi thử lại."
+            ) from exc
+    fresh.rename(live)
+    shutil.rmtree(retired, ignore_errors=True)
+    return str(_runtime_python(model_id))
+
+
 def _run_runtime_repair(model_id: str, spec: dict[str, Any]) -> None:
     try:
-        runtime_python = _install_runtime(model_id, spec)
+        runtime_python = _rebuild_runtime(model_id, spec)
         state = _read_state(model_id)
         state.update({
             "status": "installed",
@@ -1031,15 +1078,27 @@ def _extract_archive(archive: Path, destination: Path) -> list[str]:
     raise RuntimeError(f"Định dạng archive không hỗ trợ: {archive.name}")
 
 
-def _install_runtime(model_id: str, spec: dict[str, Any]) -> str | None:
+def _torch_backend(spec: dict[str, Any]) -> str:
+    """PyTorch build for this runtime: CUDA matching the installed NVIDIA driver unless the spec says otherwise.
+
+    Without it uv installs PyPI's torch, which on Windows is CPU-only even on an RTX card.
+    """
+    return str(spec.get("torch_backend") or "auto")
+
+
+def _venv_python(root: Path) -> Path:
+    return root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def _install_runtime(model_id: str, spec: dict[str, Any], root: Path | None = None) -> str | None:
     packages = tuple(spec.get("runtime_packages") or ())
     if not packages:
         return None
     uv = _uv_executable()
     if not uv:
         raise RuntimeError("Không tìm thấy uv runtime manager")
-    runtime_root = _runtime_root(model_id)
-    python = _runtime_python(model_id)
+    runtime_root = root or _runtime_root(model_id)
+    python = _venv_python(runtime_root)
     _set_job(model_id, status="installing_runtime", progress=97, detail="Đang tạo Python runtime riêng…")
     if not python.is_file():
         command = [
@@ -1050,17 +1109,42 @@ def _install_runtime(model_id: str, spec: dict[str, Any]) -> str | None:
             "--python-preference",
             "managed",
             "--seed",
+            # Repairs build next to the live runtime and are renamed into place afterwards.
+            "--relocatable",
             str(runtime_root),
         ]
         result = subprocess.run(command, capture_output=True, text=True, timeout=900, check=False)
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout or "Không tạo được model runtime").strip()[-1200:])
-    _set_job(model_id, status="installing_runtime", progress=98, detail="Đang cài thư viện chạy model…")
-    command = [uv, "pip", "install", "--python", str(python), *packages]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=3600, check=False)
-    if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout or "Không cài được thư viện model").strip()[-1200:])
+    steps = [tuple(step) for step in (spec.get("runtime_install_steps") or ())] or [packages]
+    for index, step in enumerate(steps, 1):
+        _set_job(model_id, status="installing_runtime", progress=98,
+                 detail=f"Đang cài thư viện chạy model ({index}/{len(steps)})…")
+        command = [uv, "pip", "install", "--python", str(python), "--torch-backend", _torch_backend(spec), *step]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=3600, check=False)
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "Không cài được thư viện model").strip()[-1200:])
     return str(python)
+
+
+def runtime_torch_build(model_id: str) -> str | None:
+    """Local version tag of the torch wheel in this runtime ('cpu', 'cu130', …), or None without torch."""
+    root = _runtime_root(model_id)
+    patterns = ("Lib/site-packages/torch-*.dist-info", "lib/python*/site-packages/torch-*.dist-info")
+    for pattern in patterns:
+        for dist in root.glob(pattern):
+            version = dist.name[len("torch-"):-len(".dist-info")]
+            return version.split("+", 1)[1] if "+" in version else "pypi"
+    return None
+
+
+def _gpu_upgrade_available(model_id: str, spec: dict[str, Any]) -> bool:
+    """CPU-only torch in a runtime that should use the NVIDIA card: offer a rebuild (never done automatically)."""
+    if _torch_backend(spec) == "cpu" or not _nvidia_driver_version():
+        return False
+    build = runtime_torch_build(model_id)
+    # PyPI's torch carries no local tag; on Windows it is the CPU build, on Linux it already bundles CUDA.
+    return build == "cpu" or (build == "pypi" and os.name == "nt")
 
 
 def _run_install(model_id: str, spec: dict[str, Any]) -> None:

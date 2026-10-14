@@ -255,6 +255,24 @@ class QwenVLLocal(ManagedLocalModel):
         return self._run_worker(payload)
 
 
+def _link_musetalk_models(source_root: Path, models: Path) -> None:
+    """MuseTalk opens ./musetalk/… and ./models/… from one working directory, so link the weights into its source tree."""
+    link = source_root / "models"
+    if link.exists():
+        return
+    if os.path.lexists(link):  # dangling link left behind by an uninstall
+        if os.name == "nt":
+            os.rmdir(link)
+        else:
+            link.unlink()
+    if os.name == "nt":
+        import _winapi
+
+        _winapi.CreateJunction(str(models), str(link))  # unlike symlinks, junctions need no admin rights
+    else:
+        link.symlink_to(models, target_is_directory=True)
+
+
 class MuseTalkLipSync(ManagedLocalModel):
     name = "musetalk_lipsync"
     tier = ToolTier.GENERATE
@@ -276,28 +294,37 @@ class MuseTalkLipSync(ManagedLocalModel):
         info = model_runtime_info(self.model_id)
         if not info["installed"] or not info["python"]:
             return ToolResult(success=False, error="MuseTalk chưa được cài từ Model Center")
-        config = Path(inputs["inference_config"])
-        output_dir = Path(inputs["output_dir"])
+        models = Path(info["target"])
+        source_root = models.parent / "MuseTalk-main"
+        if not (source_root / "scripts" / "inference.py").is_file():
+            return ToolResult(success=False, error="Thiếu mã nguồn MuseTalk; hãy cài lại MuseTalk trong Model Center")
+        _link_musetalk_models(source_root, models)
+        config = Path(inputs["inference_config"]).resolve()
+        output_dir = Path(inputs["output_dir"]).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         command = [
             info["python"], "-m", "scripts.inference",
             "--inference_config", str(config),
             "--result_dir", str(output_dir),
-            "--unet_model_path", str(Path(info["target"]) / "musetalkV15" / "unet.pth"),
-            "--unet_config", str(Path(info["target"]) / "musetalkV15" / "musetalk.json"),
+            "--unet_model_path", str(models / "musetalkV15" / "unet.pth"),
+            "--unet_config", str(models / "musetalkV15" / "musetalk.json"),
+            "--whisper_dir", str(models / "whisper"),
             "--version", "v15",
+            "--use_float16",
             "--ffmpeg_path", str(Path(shutil.which("ffmpeg") or "ffmpeg").parent),
         ]
         started = time.time()
-        source_root = Path(info["target"]).parent / "MuseTalk-main"
         environment = os.environ.copy()
         environment["PYTHONPATH"] = os.pathsep.join(filter(None, (str(source_root), environment.get("PYTHONPATH"))))
+        environment["PYTHONIOENCODING"] = "utf-8"
         result = subprocess.run(
             command,
-            cwd=Path(info["target"]).parent,
+            cwd=source_root,
             env=environment,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=7200,
             check=False,
         )

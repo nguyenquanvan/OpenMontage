@@ -162,8 +162,9 @@ function renderFreeModels() {
         </div>
         ${installing ? `<div class="model-progress"><i style="width:${Math.max(2, installer.progress || 0)}%"></i></div>` : ""}
         <button class="model-install-button ${installed ? "remove" : ""}" type="button" ${installed ? "data-model-remove" : needsRuntime ? "data-model-runtime" : "data-model-install"}="${escapeHtml(installer.id)}" data-license-restricted="${installer.commercial_restricted ? "true" : "false"}" ${canInstall || installed || needsRuntime ? "" : "disabled"}>${escapeHtml(buttonLabel)}</button>
+        ${installer.gpu_upgrade_available && !installing ? `<button class="model-install-button" type="button" data-model-runtime="${escapeHtml(installer.id)}">⚡ CHUYỂN SANG CARD NVIDIA</button>` : ""}
         ${installer.license_url ? `<a class="model-license-link" href="${escapeHtml(installer.license_url)}" target="_blank" rel="noreferrer">XEM GIẤY PHÉP ↗</a>` : ""}
-        <div class="model-install-detail ${installer.status === "error" || installer.blocked_reason ? "error" : ""}">${escapeHtml(installer.blocked_reason || installer.detail || (installed && !model.available ? "Model đã tải; runtime tương ứng cần được cài hoặc khởi động." : ""))}</div>
+        <div class="model-install-detail ${installer.status === "error" || installer.blocked_reason ? "error" : ""}">${escapeHtml(installer.blocked_reason || installer.detail || (installed && !model.available ? "Model đã tải; runtime tương ứng cần được cài hoặc khởi động." : ""))}${installer.gpu_upgrade_available && !installing ? escapeHtml(" Đang chạy bằng CPU; bấm “Chuyển sang card NVIDIA” để cài lại runtime bản CUDA (tải khoảng 2,5 GB, model giữ nguyên).") : ""}</div>
       ` : ""}
     </article>
   `;

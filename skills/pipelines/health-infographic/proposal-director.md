@@ -40,7 +40,7 @@ When the brief says `Kịch bản có sẵn: có — inputs/own-script.md ...`, 
 
 ## Quality Checklist
 
-- Concepts differ by insight and structure, not just title.
+- Concepts differ by insight and structure, not just title (own script: they share the script and differ in look, provider path and cost).
 - Runtime, authoring mode, provider/model, cost, and rights are explicit.
 - Medical safety and citation presentation are part of the creative design.
 - Approval remains pending until the user chooses a concept and budget.

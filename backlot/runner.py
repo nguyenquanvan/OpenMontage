@@ -22,7 +22,7 @@ from typing import Any
 from backlot import notifications
 from backlot import state as state_mod
 from lib.paths import REPO_ROOT
-from lib.checkpoint import get_next_stage, get_pipeline_stages, write_checkpoint
+from lib.checkpoint import CANONICAL_STAGE_ARTIFACTS, get_next_stage, get_pipeline_stages, write_checkpoint
 from lib.events import emit_event
 
 RUN_FILENAME = "agent_run.json"
@@ -62,10 +62,19 @@ def _run_path(project_dir: Path) -> Path:
 
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig: agents writing JSON from PowerShell leave a BOM behind.
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def _is_blocker_pause(checkpoint: dict[str, Any] | None) -> bool:
+    """awaiting_human written by an agent that stopped on a blocker: a reason, no artifact to approve."""
+    if not checkpoint or checkpoint.get("status") != "awaiting_human":
+        return False
+    declared = [name for name in (checkpoint.get("artifacts") or {}) if name != "decision_log"]
+    return not declared and bool(str(checkpoint.get("error") or "").strip())
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
@@ -708,7 +717,9 @@ không chỉ mô phỏng trạng thái.
 4. Ưu tiên provider/local runtime đã cấu hình trong MOSA TOOL ALL; không tự phát sinh chi phí ngoài
    budget hoặc gọi provider chưa được cấu hình.
 5. Cập nhật checkpoint và events thường xuyên để bảng Backlot hiển thị tiến độ. Nếu thiếu input/API,
-   ghi stage `awaiting_human` hoặc `failed` với lý do cụ thể, không tạo dữ liệu giả.
+   ghi stage `awaiting_human` hoặc `failed` với lý do cụ thể, không tạo dữ liệu giả. Khi dừng vì blocker,
+   ghi `awaiting_human` với `artifacts={{}}` và `error="<lý do một dòng>"`. Riêng phân tích video tham khảo
+   thất bại không phải blocker: ghi `fallback_decision` rồi làm tiếp với phong cách đã chọn.
 6. Khi kết thúc, để lại artifact và checkpoint hợp lệ trong workspace. Không sửa file ứng dụng,
    không xoá dữ liệu ngoài workspace.
 7. Tiếp tục tự động qua mọi stage không yêu cầu duyệt. Một stage không gated vừa `completed`
@@ -924,7 +935,11 @@ def start_run(
     if next_stage is None:
         raise ValueError("Workflow đã hoàn tất toàn bộ pipeline")
     current_checkpoint = _read_json(project_dir / f"checkpoint_{next_stage}.json")
-    if current_checkpoint and current_checkpoint.get("status") == "awaiting_human":
+    if (
+        current_checkpoint
+        and current_checkpoint.get("status") == "awaiting_human"
+        and not _is_blocker_pause(current_checkpoint)
+    ):
         raise ValueError(f"Stage '{next_stage}' đang chờ bạn duyệt trên board")
     if resolved_agent == "ollama":
         blocker = _ollama_stage_blocker(marker.get("pipeline_type"), next_stage)
@@ -1070,6 +1085,8 @@ def _resume_after_review(
             model=request.get("model"),
             allow_automation=True,
             review_feedback=request.get("review_feedback"),
+            run_note=request.get("run_note") or None,
+            auto_approve=bool(request.get("auto_approve")),
         )
     except ValueError as exc:
         failed = {
@@ -1135,9 +1152,11 @@ def review_gate(
         project_dir,
         artifact_references,
     )
-    if approved and not artifacts:
-        # The agent paused here on a blocker and left nothing to approve; the
-        # only way forward is to run it again with a note.
+    blocker = _is_blocker_pause(checkpoint)
+    if approved and not artifacts and (blocker or CANONICAL_STAGE_ARTIFACTS.get(stage)):
+        # The agent paused here on a blocker (or simply never produced the
+        # stage's artifact); there is nothing to approve. The only way forward
+        # is to run it again with a note.
         reason = str(checkpoint.get("error") or "").strip()
         raise ValueError(
             "Điểm kiểm này không có tài liệu để duyệt"
@@ -1184,11 +1203,17 @@ def review_gate(
         "brief": current_run.get("brief") or marker.get("brief") or "",
         "agent": current_run.get("agent") or "auto",
         "model": current_run.get("model"),
+        # A blocker pause has no artifact to revise: the note answers the
+        # blocker, so it travels as a run note, not as review feedback.
         "review_feedback": (
             f"Stage `{stage}` chưa được duyệt. Yêu cầu chỉnh sửa của người dùng: {note}"
-            if not approved
+            if not approved and not blocker
             else None
         ),
+        "run_note": note if (not approved and blocker) else None,
+        # The user's "Chạy thẳng" choice covers the whole run, including the
+        # part after this gate.
+        "auto_approve": bool(current_run.get("auto_approve")),
     }
     if current_run.get("status") in {"starting", "running"}:
         queued_run = {**current_run, "pending_review_resume": resume_request}

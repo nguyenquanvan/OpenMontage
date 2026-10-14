@@ -94,3 +94,19 @@ def test_an_unreadable_checkpoint_does_not_count_and_does_not_raise(tmp_path, ca
     assert completed == ["research"]
     assert get_next_stage(tmp_path, "proj", "health-infographic") == "proposal"
     assert "checkpoint proj/proposal" in caplog.text
+
+
+def test_a_completed_checkpoint_with_an_invalid_artifact_still_counts(tmp_path, caplog):
+    """Approved work is never re-run because a hand-written artifact misses a schema field."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "checkpoint_research.json").write_text(
+        json.dumps(_checkpoint("research", "completed", {"research_brief": {"version": "1.0"}}, human_approved=True)),
+        encoding="utf-8",
+    )
+
+    with caplog.at_level("WARNING"):
+        assert get_completed_stages(tmp_path, "proj", "health-infographic") == ["research"]
+
+    assert get_next_stage(tmp_path, "proj", "health-infographic") == "proposal"
+    assert "Counting completed checkpoint proj/research" in caplog.text

@@ -1347,11 +1347,19 @@ function renderNoState(s) {
 // on a blocker (missing dependency, provider error). There is nothing to
 // approve; the way forward is a note and another run.
 function gateBlocker(s, awaiting) {
-  if (!awaiting || !awaiting.error) return "";
-  const loaded = artifactNamesForStage(awaiting)
-    .filter((name) => name !== "decision_log")
-    .some((name) => s.artifacts[name] && typeof s.artifacts[name] === "object");
-  return loaded ? "" : String(awaiting.error);
+  if (!awaiting || awaiting.status !== "awaiting_human") return "";
+  // Prefer what the checkpoint itself declares (1.6.6 summaries); older
+  // summaries fall back to the artifacts the board could load from disk.
+  const declared = Array.isArray(awaiting.checkpoint_artifacts)
+    ? awaiting.checkpoint_artifacts.filter((name) => name !== "decision_log")
+    : null;
+  const hasArtifact = declared
+    ? declared.length > 0
+    : artifactNamesForStage(awaiting)
+      .filter((name) => name !== "decision_log")
+      .some((name) => s.artifacts[name] && typeof s.artifacts[name] === "object");
+  if (hasArtifact) return "";
+  return awaiting.error ? String(awaiting.error) : "Agent dừng mà không ghi lý do.";
 }
 
 function renderAwaitingNotice(s) {

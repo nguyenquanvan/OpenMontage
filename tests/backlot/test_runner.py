@@ -1176,3 +1176,73 @@ def test_review_gate_cannot_approve_a_blocker_checkpoint_without_artifacts(tmp_p
     checkpoint = json.loads((project / "checkpoint_idea.json").read_text(encoding="utf-8"))
     assert checkpoint["status"] == "awaiting_human"
     assert checkpoint["human_approved"] is False
+
+
+def _blocker_project(tmp_path, monkeypatch, *, auto_approve=True):
+    projects = tmp_path / "projects"
+    project = projects / "blocked"
+    project.mkdir(parents=True)
+    (project / "project.json").write_text(
+        json.dumps({"project_id": "blocked", "title": "Blocked", "pipeline_type": "documentary-montage", "brief": "Phóng sự"}),
+        encoding="utf-8",
+    )
+    (project / "checkpoint_idea.json").write_bytes(b"\xef\xbb\xbf" + json.dumps({
+        "version": "1.0",
+        "project_id": "blocked",
+        "pipeline_type": "documentary-montage",
+        "stage": "idea",
+        "status": "awaiting_human",
+        "timestamp": "2026-10-14T01:27:06+00:00",
+        "checkpoint_policy": "guided",
+        "human_approval_required": True,
+        "human_approved": False,
+        "artifacts": {},
+        "metadata": {"runner": "codex"},
+        "error": "Reference analysis blocked: missing yt_dlp",
+    }, ensure_ascii=False).encode("utf-8"))
+    (project / "agent_run.json").write_text(
+        json.dumps({"project_id": "blocked", "status": "failed", "agent": "codex", "auto_approve": auto_approve}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(state_mod, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(runner_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    return project
+
+
+def test_blocker_pause_is_read_with_a_bom_and_detected(tmp_path, monkeypatch):
+    project = _blocker_project(tmp_path, monkeypatch)
+    checkpoint = runner_mod._read_json(project / "checkpoint_idea.json")
+    assert checkpoint["status"] == "awaiting_human"
+    assert runner_mod._is_blocker_pause(checkpoint) is True
+    assert runner_mod._is_blocker_pause({**checkpoint, "error": ""}) is False
+    assert runner_mod._is_blocker_pause({**checkpoint, "artifacts": {"brief": {}}}) is False
+
+
+def test_rerun_with_a_note_on_a_blocker_keeps_the_run_preapproved(tmp_path, monkeypatch):
+    _blocker_project(tmp_path, monkeypatch)
+    captured = {}
+
+    def fake_start_run(project_id, **kwargs):
+        captured.update(kwargs)
+        return {"project_id": project_id, "status": "running", "agent": "codex"}
+
+    monkeypatch.setattr(runner_mod, "start_run", fake_start_run)
+
+    result = runner_mod.review_gate("blocked", stage="idea", action="revise", note="Bỏ qua video tham khảo.")
+
+    assert result["resumed"] is True
+    assert captured["run_note"] == "Bỏ qua video tham khảo."
+    assert captured["review_feedback"] is None
+    assert captured["auto_approve"] is True
+
+
+def test_start_workflow_accepts_a_blocker_pause(tmp_path, monkeypatch):
+    project = _blocker_project(tmp_path, monkeypatch)
+    monkeypatch.setattr(runner_mod.subprocess, "Popen", lambda *args, **kwargs: _FinishedProcess())
+    monkeypatch.setattr(runner_mod, "_watch_process", lambda *args: None)
+
+    runner_mod.start_run("blocked", brief="Phóng sự", agent="codex", allow_automation=True, auto_approve=True)
+
+    checkpoint = json.loads((project / "checkpoint_idea.json").read_text(encoding="utf-8"))
+    assert checkpoint["status"] == "in_progress"
+    assert list((project / "history").glob("checkpoint_idea_*.json"))

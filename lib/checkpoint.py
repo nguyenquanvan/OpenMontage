@@ -333,7 +333,7 @@ def _enforce_stage_prerequisites(
             incomplete.append(predecessor)
             continue
         try:
-            with open(path, encoding="utf-8") as handle:
+            with open(path, encoding="utf-8-sig") as handle:
                 checkpoint = json.load(handle)
             validate_checkpoint(checkpoint)
         except (OSError, json.JSONDecodeError, CheckpointValidationError):
@@ -382,7 +382,7 @@ def _archive_superseded_checkpoint(path: Path, stage: str) -> None:
     if not path.exists():
         return
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:
             existing = json.load(f)
     except (json.JSONDecodeError, OSError):
         existing = {}
@@ -421,7 +421,7 @@ def _merge_decision_log(
     """
     path = _decision_log_path(pipeline_dir, project_id)
     if path.exists():
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:
             existing = json.load(f)
     else:
         existing = {
@@ -635,14 +635,32 @@ def get_completed_stages(
     for stage in stages_to_check:
         try:
             cp = read_checkpoint(pipeline_dir, project_id, stage)
-        except (CheckpointValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-            # A hand-written or corrupt checkpoint must not brick the project:
-            # that stage simply does not count as completed.
+        except CheckpointValidationError as exc:
+            # A hand-written checkpoint must not brick the project. One that
+            # says "completed" keeps counting (a re-run would overwrite
+            # approved work); anything else simply does not count.
+            if _raw_checkpoint_status(pipeline_dir, project_id, stage) == "completed":
+                logger.warning("Counting completed checkpoint %s/%s despite: %s", project_id, stage, exc)
+                completed.append(stage)
+            else:
+                logger.warning("Ignoring invalid checkpoint %s/%s: %s", project_id, stage, exc)
+            continue
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             logger.warning("Ignoring unreadable checkpoint %s/%s: %s", project_id, stage, exc)
             continue
         if cp and cp.get("status") == "completed":
             completed.append(stage)
     return completed
+
+
+def _raw_checkpoint_status(pipeline_dir: Path, project_id: str, stage: str) -> Optional[str]:
+    """The status field of a checkpoint file without validating the rest of it."""
+    try:
+        with open(_checkpoint_path(pipeline_dir, project_id, stage), encoding="utf-8-sig") as f:
+            status = json.load(f).get("status")
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        return None
+    return status if isinstance(status, str) else None
 
 
 def get_next_stage(

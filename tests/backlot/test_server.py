@@ -514,10 +514,11 @@ class TestBacklotServerApi:
         assert "tối đa 200.000" in response.json()["detail"]
         assert not (projects_root / "too-long-script").exists()
 
-    def test_create_health_project_rejects_topic_over_default_limit(self, client):
+    def test_create_health_project_rejects_free_text_over_default_limit(self, client):
+        # `angle` declares no max_length, so the 4 000-character default applies.
         response = client.post(
             "/api/projects",
-            json=_health_payload("too-long-topic", topic="a" * 4_001),
+            json=_health_payload("too-long-angle", angle="a" * 4_001),
         )
         assert response.status_code == 400
         assert "tối đa 4.000" in response.json()["detail"]
@@ -706,3 +707,25 @@ class TestOwnScriptIntakeHardening:
         retry = client.post("/api/projects", json=_health_payload("disk-full", own_script="Một kịch bản."))
         assert retry.status_code == 201, retry.json()
         assert (projects_root / "disk-full" / "inputs" / "own-script.md").is_file()
+
+
+class TestIntakeBriefRendering:
+    def test_placeholders_in_user_text_are_not_expanded(self, client, projects_root):
+        created = client.post("/api/projects", json=_health_payload(
+            "braces", topic="Chủ đề {own_script} và {reference_url}", own_script="Một kịch bản thử.",
+        ))
+        assert created.status_code == 201, created.json()
+        brief = json.loads((projects_root / "braces" / "project.json").read_text(encoding="utf-8"))["brief"]
+        assert "Chủ đề: Chủ đề {own_script} và {reference_url}" in brief
+        assert "Kịch bản có sẵn: có — inputs/own-script.md, 4 từ" in brief
+
+    def test_a_leading_bom_character_is_dropped_from_the_script(self, client, projects_root):
+        created = client.post("/api/projects", json=_health_payload("bom-script", own_script="\ufeffKịch bản."))
+        assert created.status_code == 201, created.json()
+        raw = (projects_root / "bom-script" / "inputs" / "own-script.md").read_bytes()
+        assert raw == "Kịch bản.\n".encode("utf-8")
+
+    def test_topic_and_audience_have_their_own_limits(self, client):
+        response = client.post("/api/projects", json=_health_payload("long-topic", topic="a" * 2_001))
+        assert response.status_code == 400
+        assert "tối đa 2.000" in response.json()["detail"]

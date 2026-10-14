@@ -41,7 +41,7 @@ STALL_WINDOW_SECONDS = 10 * 60
 def _read_json(path: Path) -> Optional[dict]:
     """Read a JSON file, returning None on any failure."""
     try:
-        with open(path, encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError, UnicodeError):
@@ -164,6 +164,12 @@ def _build_stage_rail(
             "review": cp.get("review") if cp else None,
             "cost_snapshot": cp.get("cost_snapshot") if cp else None,
             "error": cp.get("error") if cp else None,
+            # What the checkpoint itself declares; the board decides "nothing
+            # to approve" from this, not from stale artifacts/*.json on disk.
+            "checkpoint_artifacts": (
+                [str(name) for name in (cp.get("artifacts") or {}) if isinstance(name, str) and name]
+                if cp else []
+            ),
             "human_approved": cp.get("human_approved") if cp else None,
             "partial_progress": (cp.get("metadata") or {}).get("partial_progress") if cp else None,
             "versions": len(versions) + (1 if cp else 0),
@@ -205,6 +211,9 @@ def _build_stage_rail(
             "review": cp.get("review"),
             "cost_snapshot": cp.get("cost_snapshot"),
             "error": cp.get("error"),
+            "checkpoint_artifacts": [
+                str(name) for name in (cp.get("artifacts") or {}) if isinstance(name, str) and name
+            ],
             "human_approved": cp.get("human_approved"),
             "partial_progress": None,
             "versions": 1 + len(history.get(name, [])),

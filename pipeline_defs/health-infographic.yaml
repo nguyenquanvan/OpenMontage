@@ -34,7 +34,7 @@ project_intake:
     Chủ đề: {topic}
     Đối tượng xem: {audience}
     Thời lượng mục tiêu: {duration_minutes} phút (bỏ qua khi có kịch bản có sẵn; khi đó tính theo số từ ở 140 từ/phút)
-    Ngôn ngữ narration và phụ đề: {language}
+    Ngôn ngữ narration và phụ đề: {language} (khi có kịch bản có sẵn: narration theo ngôn ngữ của kịch bản, ô này chỉ áp dụng cho phụ đề và metadata)
     Góc nội dung mong muốn: {angle}
     Phong cách hình ảnh: {visual_style}
     Cường độ chuyển động: {motion_intensity}
@@ -56,12 +56,14 @@ project_intake:
       label: "Chủ đề sức khỏe"
       type: textarea
       required: true
+      max_length: 2000
       placeholder: "Ví dụ: Gừng sống và gừng nấu chín ảnh hưởng khác nhau thế nào?"
       help: "Nêu câu hỏi hoặc luận điểm chính của video."
     - name: audience
       label: "Đối tượng xem"
       type: text
       required: true
+      max_length: 300
       default: "Người trưởng thành quan tâm sức khỏe, không có nền tảng y khoa"
       placeholder: "Ví dụ: người trên 40 tuổi"
     - name: duration_minutes
@@ -97,6 +99,7 @@ project_intake:
     - name: angle
       label: "Góc nội dung"
       type: text
+      max_length: 1000
       default: "So sánh, giải thích cơ chế và hướng dẫn ứng dụng an toàn"
       placeholder: "Ví dụ: phá hiểu lầm phổ biến"
     - name: visual_style
@@ -215,7 +218,7 @@ stages:
     checkpoint_required: true
     human_approval_default: true
     review_focus:
-      - Ba concept khác nhau về hook và cấu trúc
+      - "Ba concept khác nhau về hook và cấu trúc (kịch bản có sẵn: ba phương án giữ nguyên kịch bản, chỉ khác hình ảnh, provider và chi phí)"
       - Chi phí/provider được trình bày trước khi phát sinh chi phí
       - Remotion và HyperFrames đều được trình bày nếu cùng khả dụng
       - Disclaimer và chiến lược trích nguồn được duyệt

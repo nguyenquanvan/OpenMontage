@@ -499,7 +499,7 @@ def _terminal_checkpoint(project_dir: Path, stages: list[str]) -> dict[str, Any]
         if not path.is_file():
             continue
         try:
-            checkpoint = json.loads(path.read_text(encoding="utf-8"))
+            checkpoint = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError):
             continue
         if checkpoint.get("status") in {"completed", "awaiting_human", "failed"}:
@@ -513,7 +513,7 @@ def _active_stage(project_dir: Path, stages: list[str]) -> str:
         if not checkpoint.is_file():
             return stage
         try:
-            status = json.loads(checkpoint.read_text(encoding="utf-8")).get("status")
+            status = json.loads(checkpoint.read_text(encoding="utf-8-sig")).get("status")
         except (OSError, json.JSONDecodeError, AttributeError):
             return stage
         if status == "in_progress":

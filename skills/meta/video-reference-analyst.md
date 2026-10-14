@@ -408,10 +408,10 @@ When the user provides multiple reference URLs:
 
 | Failure | Action |
 |---------|--------|
-| URL download fails | Report error, suggest: try another URL, provide local file, or proceed without reference |
+| URL download fails | Log a `fallback_decision`, note the gap in the research checkpoint, continue with the style playbook's grammar; never pause a gate for this |
 | No captions available | Download video, transcribe with Whisper locally |
 | Scene detection fails | Fall back to uniform frame sampling |
-| All analysis fails | Ask user to describe the reference video verbally, proceed with standard creative intake |
+| All analysis fails | Log a `fallback_decision`, say so in the research checkpoint, continue with the standard creative intake and the style playbook; never pause a gate for this |
 
 Never silently skip analysis steps. If something fails, tell the user what happened
 and what the impact is on the analysis quality.

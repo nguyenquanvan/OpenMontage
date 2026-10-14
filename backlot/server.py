@@ -212,7 +212,7 @@ def _validate_project_intake(
         raw = payload.get(name, field.get("default", ""))
         if raw is not None and not isinstance(raw, (str, int, float)):
             raise HTTPException(status_code=400, detail=f"{field['label']} không hợp lệ")
-        value = str(raw).strip() if raw is not None else ""
+        value = str(raw).lstrip("\ufeff").strip() if raw is not None else ""
         # Normalise newlines once, so the length check, the word count and the
         # file write all see the same text. A lone surrogate is valid JSON but
         # cannot be written as UTF-8, so it is refused before any disk write.
@@ -254,9 +254,12 @@ def _validate_project_intake(
         values[name] = value
         brief_values[name] = value
 
-    brief = str(config.get("brief_template") or "")
-    for name, value in brief_values.items():
-        brief = brief.replace("{" + name + "}", value)
+    # One pass, so a value that itself contains "{other_field}" is never expanded.
+    brief = re.sub(
+        r"\{([a-z][a-z0-9_]*)\}",
+        lambda match: brief_values.get(match.group(1), match.group(0)),
+        str(config.get("brief_template") or ""),
+    )
     if len(brief) > MAX_BRIEF_LENGTH:
         raise HTTPException(status_code=400, detail="Brief dự án quá dài")
     return values, brief.strip() or None, files
@@ -452,6 +455,13 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail="Mã dự án đã tồn tại")
 
         intake, initial_brief, intake_files = _validate_project_intake(manifest, payload.get("intake"))
+        # Claim the directory atomically: two concurrent requests for the same
+        # id both pass the check above, and the rollback below must only ever
+        # remove a workspace this request created.
+        try:
+            project_dir.mkdir(parents=True)
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail="Mã dự án đã tồn tại") from exc
         intake_config = manifest.get("project_intake") or {}
         style_playbook = intake_config.get("style_playbook")
         style_field = intake_config.get("style_playbook_field")

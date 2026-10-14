@@ -20,7 +20,7 @@ Build a clear arc: surprising but accurate hook → define the question → expl
 
 When the brief says `Kịch bản có sẵn: có — inputs/own-script.md ...`, assemble the user's text instead of writing:
 
-- `sections` are the script's paragraphs in their original order and `text` is each paragraph verbatim. Do not rewrite, shorten, reorder, or merge; add only `pronunciation_guides`, `delivery_cues`, and overlay suggestions.
+- `sections` follow the script in its original order and `text` is verbatim. A section is a run of consecutive sentences that share one claim matrix row (or carry no claim); a paragraph with several claims is split at sentence boundaries, never rewritten, shortened, reordered, or merged. Add only `pronunciation_guides`, `delivery_cues`, and overlay suggestions.
 - Each section's `source_ref` is always the `claim_id` of its matrix row — also for rows whose `status` is `unverified`, so the reason stays reachable. Every unverified sentence goes into `metadata.unverified_claims` as `{section_id, claim_id, sentence, reason}`. Do not delete or soften them.
 - The narration language is the script's language; the "Ngôn ngữ" field only shapes subtitles and metadata.
 - `total_duration_seconds` and section timings derive from the text: `len(text.split())` words at about 140 words per minute, not from the "Thời lượng" field.

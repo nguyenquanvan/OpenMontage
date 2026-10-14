@@ -24,10 +24,22 @@ FLUX2 = {
 
 
 class FakeClient:
-    def __init__(self, models, available=True):
+    def __init__(self, models, available=True, root=None, starts=True):
         self.models, self.available, self.submitted = models, available, []
+        self.root, self.starts, self.start_calls = root, starts, 0
 
     def is_available(self):
+        return self.available
+
+    def startable_root(self):
+        return self.root
+
+    def ensure_available(self):
+        if self.available:
+            return True
+        self.start_calls += 1
+        if self.root is not None and self.starts:
+            self.available = True       # the managed ComfyUI came up
         return self.available
 
     def list_models(self):
@@ -43,10 +55,40 @@ class FakeClient:
         return [Path(dest)]
 
 
-def tool_with(models, available=True):
+def tool_with(models, available=True, root=None, starts=True):
     tool = ComfyUIImage()
-    tool._client = FakeClient(models, available)
+    tool._client = FakeClient(models, available, root, starts)
     return tool
+
+
+def test_server_down_but_startable_install_with_schnell_files_counts_as_available(tmp_path, monkeypatch):
+    from backlot import comfyui_runtime
+
+    monkeypatch.setattr(comfyui_runtime, "offline_models", lambda root: SCHNELL_ONLY)
+    # Before the start the listing comes from disk; once ComfyUI is up the server reports the same files.
+    tool = tool_with(SCHNELL_ONLY, available=False, root=tmp_path)
+
+    assert tool.get_status() == ToolStatus.AVAILABLE
+    info = tool.get_info()
+    assert info["active_workflow"] == "flux1-schnell-gguf-txt2img"
+
+    result = tool.execute({"prompt": "a village", "output_path": str(tmp_path / "a.png")})
+
+    assert result.success, result.error
+    assert tool._client.start_calls == 1          # the tool started ComfyUI itself
+    assert tool._client.submitted[0][1] == "9"
+
+
+def test_server_down_and_nothing_to_start_is_unavailable_with_the_reason(tmp_path, monkeypatch):
+    from backlot import comfyui_runtime
+
+    monkeypatch.setattr(comfyui_runtime, "last_error", lambda: "Chưa có ComfyUI nào để bật")
+    tool = tool_with({}, available=False, root=None)
+
+    assert tool.get_status() == ToolStatus.UNAVAILABLE
+    result = tool.execute({"prompt": "p", "output_path": str(tmp_path / "a.png")})
+    assert not result.success
+    assert "Chưa có ComfyUI nào để bật" in result.error
 
 
 def test_schnell_stack_is_picked_from_the_gguf_listing():

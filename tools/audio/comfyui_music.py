@@ -206,7 +206,7 @@ class ComfyUIMusic(BaseTool):
                 ),
             )
 
-        if not self._client.is_available():
+        if not self._client.ensure_available():
             return ToolResult(success=False, error=self._client.unavailable_reason())
 
         if not custom_workflow:

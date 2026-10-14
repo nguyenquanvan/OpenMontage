@@ -111,7 +111,8 @@ jobs:
             (Join-Path $runtimeRoot "ffmpeg\ffprobe.exe"),
             (Join-Path $runtimeRoot "uv\uv.exe"),
             (Join-Path $installRoot "_internal\remotion-composer\node_modules"),
-            (Join-Path $installRoot "_internal\.agents\skills\character-rigging\SKILL.md")
+            (Join-Path $installRoot "_internal\.agents\skills\character-rigging\SKILL.md"),
+            (Join-Path $runtimeRoot "7zip\7zr.exe")
           )
           foreach ($path in $checks) {
             if (-not (Test-Path $path)) { throw "Bundled runtime path missing: $path" }

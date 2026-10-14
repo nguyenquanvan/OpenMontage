@@ -49,6 +49,9 @@ def configure_bundled_runtime(root: Path | None = None) -> dict[str, str | None]
         os.environ.setdefault("OPENMONTAGE_NODE_DIR", str(node_dir))
     if uv_path.is_file():
         os.environ.setdefault("OPENMONTAGE_UV_PATH", str(uv_path))
+    seven_zip = runtime_root / "7zip" / "7zr.exe"
+    if seven_zip.is_file():
+        os.environ.setdefault("OPENMONTAGE_7ZR_PATH", str(seven_zip))
     os.environ.setdefault("OPENMONTAGE_RUNTIME_DIR", str(runtime_root))
     return {
         "runtime_dir": str(runtime_root),

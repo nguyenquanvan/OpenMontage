@@ -794,7 +794,7 @@ If you'd like to go further, [sponsor the project](https://github.com/sponsors/c
 MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
 
-Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.7` · build `20261014.4`**. App hiển thị
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.8` · build `20261014.5`**. App hiển thị
 phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
 `GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
 trong `lib/app_version.py`.
@@ -837,6 +837,20 @@ workflow vẫn dừng ở từng cổng như cũ.
 `comfyui_image` dùng FLUX.2 Dev khi máy có đủ ba file của nó. Nếu không, tool tự chuyển sang
 FLUX.1 schnell GGUF (cần custom node ComfyUI-GGUF), bản chạy được trên card 8 GB và được dùng
 thương mại. Mặc định ComfyUI ở `http://127.0.0.1:8188`.
+
+### Ảnh minh hoạ miễn phí: gói "FLUX.1 schnell" trong Model Center
+
+**Cài đặt API → Model Center → FLUX.1 schnell → Tải.** Gói gồm 4 tệp (khoảng 10 GB, Apache-2.0,
+dùng thương mại được). Nếu máy chưa có ComfyUI, app tải thêm **ComfyUI portable** (2 GB, khoảng
+7 GB sau giải nén; chọn bản CUDA 13 khi driver NVIDIA ≥ 580, ngược lại CUDA 12.6) cùng node
+ComfyUI-GGUF vào `<thư mục dữ liệu>\ComfyUI\ComfyUI_windows_portable`. Yêu cầu: Windows x64, card
+NVIDIA 8 GB VRAM trở lên, còn trống khoảng 30 GB.
+
+Khi một tool ComfyUI chạy mà server chưa bật, app **tự bật** ComfyUI đó trên `127.0.0.1:8188`
+(lần đầu mất 2–4 phút) và tắt nó khi thoát app. App chỉ tắt ComfyUI do chính nó bật. Máy đã có
+ComfyUI riêng (có `main.py` và `.venv`) thì điền đường dẫn vào **Cài đặt API → Thư mục ComfyUI có
+sẵn**; app sẽ bật và chép model vào đó thay vì tải bản portable. Nhật ký server nằm ở
+`<thư mục dữ liệu>\logs\comfyui.log`.
 
 ### Agent miễn phí bằng Ollama
 

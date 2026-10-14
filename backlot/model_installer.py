@@ -20,6 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from backlot import comfyui_runtime
 from backlot.settings import update_provider_settings
 from lib.paths import DATA_DIR
 
@@ -39,10 +40,22 @@ class DownloadFile:
     size_bytes: int = 0
     extract_to: str | None = None
     remove_after_extract: bool = True
+    # When set, the install state records this one directory instead of every extracted member
+    # (a ComfyUI portable has tens of thousands of files).
+    record_root: str | None = None
 
 
 def _hf_url(repo: str, path: str) -> str:
     return f"https://huggingface.co/{repo}/resolve/main/{urllib.parse.quote(path)}?download=true"
+
+
+COMFYUI_PORTABLE_TAG = "v0.40.0"
+COMFYUI_PORTABLE_ASSETS = {
+    # CUDA 13 build needs an NVIDIA driver >= 580; older drivers get the CUDA 12.6 build.
+    "cu13": ("ComfyUI_windows_portable_nvidia.7z", 2_009_901_495),
+    "cu126": ("ComfyUI_windows_portable_nvidia_cu126.7z", 1_901_618_627),
+}
+COMFYUI_GGUF_NODE_URL = "https://github.com/city96/ComfyUI-GGUF/archive/refs/heads/main.zip"
 
 
 INSTALL_SPECS: dict[str, dict[str, Any]] = {
@@ -56,11 +69,52 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
         "license": "OpenRAIL++",
         "settings": {"LOCAL_IMAGE_MODEL": "{target}"},
     },
+    "comfyui-runtime": {
+        "label": "ComfyUI portable (NVIDIA) + node GGUF",
+        "kind": "files",
+        "target": "comfyui_root",
+        # 1.9 GB archive, about 7 GB unpacked; the archive is deleted after extraction.
+        "estimated_bytes": 7_500_000_000,
+        "min_memory_gb": 8,
+        "license": "GPL-3.0 (ComfyUI) + Apache-2.0 (ComfyUI-GGUF)",
+        "license_url": "https://github.com/comfyanonymous/ComfyUI/blob/master/LICENSE",
+        "source_url": f"https://github.com/comfyanonymous/ComfyUI/releases/tag/{COMFYUI_PORTABLE_TAG}",
+        "tier": "core",
+        "requires_nvidia": True,
+        "files_factory": "_comfyui_portable_files",
+        "post_install": "_finish_comfyui_portable",
+    },
+    "comfyui-flux1-schnell": {
+        "label": "FLUX.1 schnell GGUF — ảnh minh hoạ (tự cài ComfyUI nếu chưa có)",
+        "kind": "files",
+        "requires": ("comfyui-runtime",),
+        "target": "comfyui",
+        "estimated_bytes":10_300_000_000,
+        "min_memory_gb": 8,
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+        "source_url": "https://huggingface.co/city96/FLUX.1-schnell-gguf",
+        "tier": "core",
+        "files": (
+            DownloadFile(_hf_url("city96/FLUX.1-schnell-gguf", "flux1-schnell-Q4_K_S.gguf"),
+                         "unet/flux1-schnell-Q4_K_S.gguf", 6_783_943_712),
+            DownloadFile(_hf_url("city96/t5-v1_1-xxl-encoder-gguf", "t5-v1_1-xxl-encoder-Q4_K_M.gguf"),
+                         "clip/t5-v1_1-xxl-encoder-Q4_K_M.gguf", 2_896_123_072),
+            DownloadFile(_hf_url("comfyanonymous/flux_text_encoders", "clip_l.safetensors"),
+                         "clip/clip_l.safetensors", 246_144_152),
+            # The FLUX VAE; Comfy-Org's repack is the same file as BFL's gated ae.safetensors
+            # (sha256 afc8e282…29e38) and needs no Hugging Face login.
+            DownloadFile(_hf_url("Comfy-Org/Lumina_Image_2.0_Repackaged", "split_files/vae/ae.safetensors"),
+                         "vae/ae.safetensors", 335_304_388),
+        ),
+        "post_install": "_ensure_gguf_node",
+    },
     "comfyui-image": {
         "label": "Flux 2 Dev NVFP4",
         "kind": "files",
+        "requires": ("comfyui-runtime",),
         "target": "comfyui",
-        "estimated_bytes": 34_000_000_000,
+        "estimated_bytes":34_000_000_000,
         "min_memory_gb": 32,
         "license": "FLUX Dev Non-Commercial",
         "commercial_restricted": True,
@@ -94,8 +148,9 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
     "comfyui-video": {
         "label": "WAN 2.2 T2V 14B FP8",
         "kind": "files",
+        "requires": ("comfyui-runtime",),
         "target": "comfyui",
-        "estimated_bytes": 38_000_000_000,
+        "estimated_bytes":38_000_000_000,
         "min_memory_gb": 32,
         "license": "Apache-2.0",
         "files": tuple(
@@ -140,8 +195,9 @@ INSTALL_SPECS: dict[str, dict[str, Any]] = {
     "comfyui-music": {
         "label": "ACE-Step 1 3.5B",
         "kind": "files",
+        "requires": ("comfyui-runtime",),
         "target": "comfyui",
-        "estimated_bytes": 7_700_000_000,
+        "estimated_bytes":7_700_000_000,
         "min_memory_gb": 16,
         "license": "Apache-2.0",
         "files": (
@@ -463,23 +519,122 @@ def _memory_bytes() -> int:
 
 
 def _comfyui_root() -> Path:
-    configured = os.environ.get("MOSA_COMFYUI_DIR")
-    candidates = [
-        Path(configured).expanduser() if configured else None,
-        Path.home() / "Applications" / "ComfyUI",
-        Path.home() / "ComfyUI",
-        DATA_DIR / "ComfyUI",
-    ]
-    for candidate in candidates:
-        if candidate and (candidate / "models").is_dir():
+    """The ComfyUI checkout that receives model files: a real install first, else a bare models/ folder."""
+    root = comfyui_runtime.detect_root()
+    if root:
+        return root
+    for candidate in comfyui_runtime.candidate_roots():
+        if (candidate / "models").is_dir():
             return candidate
-    return DATA_DIR / "ComfyUI"
+    return comfyui_runtime.managed_portable_dir() / "ComfyUI"
 
 
 def _target_root(spec: dict[str, Any]) -> Path:
     if spec.get("target") == "comfyui":
         return _comfyui_root() / "models"
+    if spec.get("target") == "comfyui_root":
+        return comfyui_runtime.managed_portable_dir().parent
     return MODEL_ROOT / str(spec.get("target", "unknown"))
+
+
+@lru_cache(maxsize=1)
+def _nvidia_driver_version() -> float:
+    """Driver major.minor from nvidia-smi, or 0.0 when there is no NVIDIA driver."""
+    try:
+        result = subprocess.run(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+                                capture_output=True, text=True, timeout=15, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return 0.0
+    first = (result.stdout or "").strip().splitlines()[:1]
+    try:
+        return float(".".join(first[0].strip().split(".")[:2])) if first else 0.0
+    except ValueError:
+        return 0.0
+
+
+def _comfyui_portable_files() -> list[DownloadFile]:
+    if _platform_key() != "win32-x64":
+        return []
+    name, size = COMFYUI_PORTABLE_ASSETS["cu13" if _nvidia_driver_version() >= 580 else "cu126"]
+    portable = comfyui_runtime.PORTABLE_DIRNAME
+    return [
+        DownloadFile(f"https://github.com/comfyanonymous/ComfyUI/releases/download/{COMFYUI_PORTABLE_TAG}/{name}",
+                     name, size, extract_to=".", record_root=portable),
+        DownloadFile(COMFYUI_GGUF_NODE_URL, "ComfyUI-GGUF-main.zip", 0,
+                     extract_to=f"{portable}/ComfyUI/custom_nodes",
+                     record_root=f"{portable}/ComfyUI/custom_nodes/ComfyUI-GGUF"),
+    ]
+
+
+def _seven_zip_executable() -> str | None:
+    configured = os.environ.get("OPENMONTAGE_7ZR_PATH")
+    if configured and Path(configured).is_file():
+        return configured
+    return shutil.which("7zr") or shutil.which("7z") or shutil.which("7za")
+
+
+def _requirement_ready(model_id: str) -> bool:
+    """A required package counts as present when installed by us or already on the machine."""
+    spec = INSTALL_SPECS.get(model_id) or {}
+    if _installed(model_id, spec):
+        return True
+    if model_id == "comfyui-runtime":
+        root = comfyui_runtime.detect_root()
+        return bool(root and comfyui_runtime.launcher(root, 8188))
+    return False
+
+
+def _pip_install(python: Path, requirements: Path) -> None:
+    command = [str(python), "-s", "-m", "pip", "install", "--disable-pip-version-check", "-r", str(requirements)]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "pip install thất bại").strip()[-1200:])
+
+
+def _install_gguf_node(model_id: str, root: Path) -> None:
+    """Make sure <root>/custom_nodes/ComfyUI-GGUF exists and its Python packages are installed."""
+    nodes = root / "custom_nodes"
+    final = nodes / "ComfyUI-GGUF"
+    extracted = nodes / "ComfyUI-GGUF-main"
+    if not final.is_dir():
+        if not extracted.is_dir():
+            _set_job(model_id, status="installing_runtime", progress=96, detail="Đang tải node ComfyUI-GGUF…")
+            archive = nodes / "ComfyUI-GGUF-main.zip"
+            _download_file(model_id, DownloadFile(COMFYUI_GGUF_NODE_URL, archive.name), archive,
+                           {"downloaded": 0, "total": 0})
+            _extract_archive(archive, nodes)
+            archive.unlink(missing_ok=True)
+        extracted.rename(final)
+    python = comfyui_runtime.python_for(root)
+    if python is None:
+        raise RuntimeError(
+            f"Không tìm thấy Python của ComfyUI ở {root} để cài thư viện cho node GGUF; "
+            "hãy chạy pip install gguf trong môi trường của ComfyUI đó."
+        )
+    _set_job(model_id, status="installing_runtime", progress=98, detail="Đang cài thư viện cho node GGUF…")
+    _pip_install(python, final / "requirements.txt")
+
+
+def _finish_comfyui_portable(model_id: str, target: Path) -> None:
+    root = target / comfyui_runtime.PORTABLE_DIRNAME / "ComfyUI"
+    if not comfyui_runtime.is_comfyui_root(root):
+        raise RuntimeError(f"Giải nén xong nhưng không thấy ComfyUI ở {root}")
+    _install_gguf_node(model_id, root)
+
+
+def _ensure_gguf_node(model_id: str, target: Path) -> None:
+    _install_gguf_node(model_id, target.parent)
+
+
+# Spec hooks are named, not referenced, so they resolve at call time (tests swap them with monkeypatch).
+_POST_INSTALL = ("_finish_comfyui_portable", "_ensure_gguf_node")
+_FILES_FACTORIES = ("_comfyui_portable_files",)
+
+
+def _hook(name: str, allowed: tuple[str, ...]):
+    if name not in allowed:
+        raise RuntimeError(f"Spec hook không hợp lệ: {name}")
+    return globals()[name]
 
 
 def _state_path(model_id: str) -> Path:
@@ -530,6 +685,9 @@ def _uv_executable() -> str | None:
 
 
 def _spec_files(spec: dict[str, Any]) -> list[DownloadFile]:
+    factory = spec.get("files_factory")
+    if factory:
+        return list(_hook(str(factory), _FILES_FACTORIES)())
     platform_files = spec.get("platform_files")
     if isinstance(platform_files, dict):
         return list(platform_files.get(_platform_key()) or ())
@@ -542,14 +700,27 @@ def _compatibility(spec: dict[str, Any]) -> tuple[bool, str | None]:
     platforms = tuple(spec.get("platforms") or ())
     if platforms and _platform_key() not in platforms:
         return False, f"Model này chỉ hỗ trợ: {', '.join(platforms)}. Máy hiện tại: {_platform_key()}."
-    if spec.get("platform_files") and not _spec_files(spec):
+    if (spec.get("platform_files") or spec.get("files_factory")) and not _spec_files(spec):
         return False, f"Chưa có gói tải tự động cho {_platform_key()}."
+    if spec.get("requires_nvidia") and not _nvidia_driver_version():
+        return False, "Cần card NVIDIA với driver đã cài (nvidia-smi không chạy được trên máy này)."
+    if spec.get("files_factory") and not _seven_zip_executable():
+        return False, "Thiếu 7zr.exe trong bản app; hãy cài bản desktop mới nhất."
     if spec.get("runtime_packages") and not _uv_executable():
         return False, "Thiếu uv runtime manager trong bản app; hãy cài bản desktop mới nhất."
     memory = _memory_bytes()
     minimum = int(spec.get("min_memory_gb", 0)) * 1024**3
     if memory and minimum and memory < minimum:
         return False, f"Cần tối thiểu {spec['min_memory_gb']} GB RAM; máy này có khoảng {round(memory / 1024**3)} GB."
+    missing_requirements = [dep for dep in (spec.get("requires") or ()) if not _requirement_ready(dep)]
+    for dep in missing_requirements:
+        ok, why = _compatibility(INSTALL_SPECS[dep])
+        if not ok:
+            return False, f"Cần cài {INSTALL_SPECS[dep]['label']} trước: {why}"
+    if spec.get("target") == "comfyui" and not missing_requirements and comfyui_runtime.detect_root() is None \
+            and comfyui_runtime.reachable(comfyui_runtime.DEFAULT_SERVER_URL):
+        return False, ("ComfyUI đang chạy nhưng app không biết thư mục của nó; đặt MOSA_COMFYUI_DIR "
+                       "trong Cài đặt API để app chép model vào đúng chỗ.")
     target = _target_root(spec)
     disk_probe = target
     while not disk_probe.exists() and disk_probe != disk_probe.parent:
@@ -558,6 +729,7 @@ def _compatibility(spec: dict[str, Any]) -> tuple[bool, str | None]:
     required = (
         int(spec.get("estimated_bytes", 0))
         + int(spec.get("runtime_estimated_bytes", 0))
+        + sum(int(INSTALL_SPECS[dep].get("estimated_bytes", 0)) for dep in missing_requirements)
         + MIN_FREE_RESERVE_BYTES
     )
     if free < required:
@@ -620,6 +792,8 @@ def install_catalog() -> list[dict[str, Any]]:
             "detail": state.get("detail"),
             "target": str(_target_root(spec)),
             "runtime_target": str(_runtime_root(model_id)) if spec.get("runtime_packages") else None,
+            "requires": list(spec.get("requires") or ()),
+            "requirements_ready": all(_requirement_ready(dep) for dep in (spec.get("requires") or ())),
         })
     return result
 
@@ -812,6 +986,16 @@ def _extract_archive(archive: Path, destination: Path) -> list[str]:
     destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=True)
     extracted: list[str] = []
+    if archive.suffix.lower() == ".7z":
+        seven_zip = _seven_zip_executable()
+        if not seven_zip:
+            raise RuntimeError("Thiếu 7zr.exe để giải nén; hãy cài bản desktop mới nhất.")
+        before = {entry.name for entry in destination.iterdir()}
+        result = subprocess.run([seven_zip, "x", "-y", f"-o{destination}", str(archive)],
+                                capture_output=True, text=True, timeout=3600, check=False)
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "7zr thất bại").strip()[-800:])
+        return sorted(entry.name for entry in destination.iterdir() if entry.name not in before)
     if zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as bundle:
             for member in bundle.infolist():
@@ -880,8 +1064,18 @@ def _install_runtime(model_id: str, spec: dict[str, Any]) -> str | None:
 
 
 def _run_install(model_id: str, spec: dict[str, Any]) -> None:
-    target = _target_root(spec)
     try:
+        for dep in spec.get("requires") or ():
+            if _requirement_ready(dep):
+                continue
+            dep_spec = INSTALL_SPECS[dep]
+            _set_job(model_id, status="downloading", progress=0, detail=f"Đang cài {dep_spec['label']} trước…")
+            _run_install(dep, dep_spec)
+            dep_state = _read_state(dep)
+            if dep_state.get("status") != "installed":
+                raise RuntimeError(f"Không cài được {dep_spec['label']}: {dep_state.get('detail') or 'lỗi không rõ'}")
+        # Resolved after the requirements: a freshly installed ComfyUI decides where model files go.
+        target = _target_root(spec)
         files = _snapshot_files(spec) if spec["kind"] == "snapshot" else _spec_files(spec)
         total = sum(item.size_bytes for item in files) or int(spec.get("estimated_bytes", 0))
         counters = {"downloaded": 0, "total": total}
@@ -889,18 +1083,29 @@ def _run_install(model_id: str, spec: dict[str, Any]) -> None:
         installed_files = []
         for file in files:
             destination = target / file.relative_path
+            if file.record_root and (target / file.record_root).exists():
+                installed_files.append(file.record_root)
+                counters["downloaded"] += file.size_bytes
+                continue
             if not destination.is_file() or (file.size_bytes and destination.stat().st_size != file.size_bytes):
                 _download_file(model_id, file, destination, counters)
             else:
                 counters["downloaded"] += destination.stat().st_size
             if file.extract_to is not None:
                 extraction_root = target / file.extract_to
+                _set_job(model_id, status="installing_runtime", detail=f"Đang giải nén {destination.name}…")
                 extracted = _extract_archive(destination, extraction_root)
-                installed_files.extend(str((Path(file.extract_to) / item).as_posix()) for item in extracted)
+                if file.record_root:
+                    installed_files.append(file.record_root)
+                else:
+                    installed_files.extend(str((Path(file.extract_to) / item).as_posix()) for item in extracted)
                 if file.remove_after_extract:
                     destination.unlink(missing_ok=True)
             else:
                 installed_files.append(file.relative_path)
+        post_install = spec.get("post_install")
+        if post_install:
+            _hook(str(post_install), _POST_INSTALL)(model_id, target)
         runtime_python = _install_runtime(model_id, spec)
         settings = {
             key: str(value).format(target=target)

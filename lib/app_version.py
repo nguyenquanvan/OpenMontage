@@ -6,8 +6,8 @@ import os
 
 
 APP_NAME = "MOSA TOOL ALL"
-APP_VERSION = os.environ.get("MOSA_APP_VERSION", "1.6.7")
-APP_BUILD = os.environ.get("MOSA_APP_BUILD", "20261014.4")
+APP_VERSION = os.environ.get("MOSA_APP_VERSION", "1.6.8")
+APP_BUILD = os.environ.get("MOSA_APP_BUILD", "20261014.5")
 APP_VERSION_LABEL = f"v{APP_VERSION} · build {APP_BUILD}"
 
 

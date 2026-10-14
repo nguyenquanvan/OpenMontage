@@ -200,8 +200,19 @@ class ComfyUIImage(BaseTool):
         self._client = ComfyUIClient(capability="image")
 
     def _select_stack(self) -> tuple[str | None, dict[str, str] | None, list[str]]:
-        """Return (workflow key, schnell model names, FLUX.2 files missing) for this server."""
-        models = self._client.list_models()
+        """Return (workflow key, schnell model names, FLUX.2 files missing) for this server.
+
+        While the server is down, the files of the install the app can start stand in for its listing.
+        """
+        if self._client.is_available():
+            models = self._client.list_models()
+        else:
+            root = self._client.startable_root()
+            if root is None:
+                return None, None, list(_REQUIRED_MODELS)
+            from backlot import comfyui_runtime
+
+            models = comfyui_runtime.offline_models(root)
         available = {name for names in models.values() for name in names}
         missing = [name for name in _REQUIRED_MODELS if name not in available]
         if not missing:
@@ -212,7 +223,7 @@ class ComfyUIImage(BaseTool):
         return None, None, missing
 
     def get_status(self) -> ToolStatus:
-        if not self._client.is_available():
+        if not self._client.is_available() and self._client.startable_root() is None:
             return ToolStatus.UNAVAILABLE
         stack, _, _ = self._select_stack()
         return ToolStatus.AVAILABLE if stack else ToolStatus.DEGRADED
@@ -249,10 +260,10 @@ class ComfyUIImage(BaseTool):
                 ),
             )
 
-        if not self._client.is_available():
+        if not self._client.ensure_available():
             return ToolResult(
                 success=False,
-                error=self._client.unavailable_reason(),
+                error=self._unavailable_reason(),
             )
 
         stack, schnell = None, None
@@ -376,6 +387,12 @@ class ComfyUIImage(BaseTool):
             cost_usd=0.0,
             duration_seconds=round(time.time() - start, 2),
         )
+
+    def _unavailable_reason(self) -> str:
+        from backlot import comfyui_runtime
+
+        started = comfyui_runtime.last_error()
+        return f"{self._client.unavailable_reason()}\n{started}" if started else self._client.unavailable_reason()
 
     @staticmethod
     def _load_custom_workflow(inputs: dict[str, Any]) -> dict:

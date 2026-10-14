@@ -103,6 +103,28 @@ class ComfyUIClient:
         except Exception:
             return False
 
+    def ensure_available(self) -> bool:
+        """Like is_available, but first starts the app's own ComfyUI when the server is local and not up."""
+        if self.is_available():
+            return True
+        try:
+            from backlot import comfyui_runtime
+        except Exception:
+            return False
+        return comfyui_runtime.ensure_running(self.server_url)
+
+    def startable_root(self):
+        """The local ComfyUI install the app could start for this client, or None."""
+        try:
+            from backlot import comfyui_runtime
+        except Exception:
+            return None
+        port = comfyui_runtime._local_port(self.server_url)
+        root = comfyui_runtime.detect_root()
+        if port is None or root is None or comfyui_runtime.launcher(root, port) is None:
+            return None
+        return root
+
     # ------------------------------------------------------------------
     # Model discovery
     # ------------------------------------------------------------------

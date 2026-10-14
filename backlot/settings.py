@@ -75,6 +75,7 @@ LOCAL_FIELDS: tuple[dict[str, Any], ...] = (
     {"key": "COMFYUI_IMAGE_SERVER_URL", "label": "ComfyUI ảnh riêng", "type": "url", "hint": "Tuỳ chọn: server ComfyUI dành riêng cho ảnh."},
     {"key": "COMFYUI_VIDEO_SERVER_URL", "label": "ComfyUI video riêng", "type": "url", "hint": "Tuỳ chọn: server ComfyUI dành riêng cho video."},
     {"key": "COMFYUI_MUSIC_SERVER_URL", "label": "ComfyUI nhạc riêng", "type": "url", "hint": "Tuỳ chọn: server ComfyUI dành riêng cho ACE-Step."},
+    {"key": "MOSA_COMFYUI_DIR", "label": "Thư mục ComfyUI có sẵn", "type": "text", "hint": "Tuỳ chọn: thư mục ComfyUI đã cài (có main.py và .venv), ví dụ D:\\ComfyUI, để app tự bật và chép model vào đó. Để trống nếu dùng ComfyUI do Model Center cài."},
 )
 LOCAL_ALLOWED_KEYS = {field["key"] for field in LOCAL_FIELDS}
 

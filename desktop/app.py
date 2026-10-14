@@ -315,6 +315,12 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         update_stop.set()
         server.should_exit = True
+        try:
+            from backlot import comfyui_runtime
+
+            comfyui_runtime.stop_managed()
+        except Exception:
+            pass
     return 0
 
 

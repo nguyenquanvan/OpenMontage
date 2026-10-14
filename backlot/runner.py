@@ -627,6 +627,9 @@ trước lệnh):
   lấy `data`, `artifacts`, `error`.
 - Tài liệu kỹ năng (`agent_skills`) của mỗi tool nằm ở `{REPO_ROOT / '.agents' / 'skills'}/<tên>/SKILL.md`;
   `--describe-tool` ghi sẵn đường dẫn trong `agent_skill_files`. Đọc chúng trước khi chạy tool.
+- `comfyui_image` tự bật ComfyUI của app (gói "FLUX.1 schnell" trong Model Center, hoặc thư mục
+  MOSA_COMFYUI_DIR) khi server chưa chạy; lần đầu mất tới 2–4 phút. Không yêu cầu người dùng bật ComfyUI tay
+  khi tool báo `available`.
 - Dùng tool của app cho TTS, ảnh, nhạc, ghép âm thanh, dựng, render và review. Chỉ tự viết script khi không có
   tool phù hợp; khi đó ghi lý do vào decision_log.
 - Tool có `estimated_cost_usd` > 0 chỉ chạy khi chi phí đã nằm trong ngân sách người dùng duyệt; khi đó thêm

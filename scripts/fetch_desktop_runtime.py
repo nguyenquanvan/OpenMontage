@@ -214,6 +214,21 @@ def _portable_ffprobe(source: Path) -> bool:
     return "/opt/homebrew/" not in dependencies and "/usr/local/Cellar/" not in dependencies
 
 
+def copy_7zr(force: bool) -> dict[str, object]:
+    """Bundle 7-Zip's console extractor on Windows; ComfyUI portable ships as a .7z archive."""
+    target_name, _ = target_platform()
+    if target_name != "win":
+        return {"bundled": False, "reason": "Windows only"}
+    destination = RUNTIME_ROOT / "7zip"
+    target = destination / "7zr.exe"
+    if target.is_file() and not force:
+        return {"bundled": True, "filename": "7zr.exe"}
+    destination.mkdir(parents=True, exist_ok=True)
+    source = download("https://www.7-zip.org/a/7zr.exe", DOWNLOAD_ROOT / "7zr.exe")
+    shutil.copy2(source, target)
+    return {"bundled": True, "filename": "7zr.exe", "source": "https://www.7-zip.org/a/7zr.exe"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node-version", default=os.environ.get("OPENMONTAGE_NODE_VERSION", DEFAULT_NODE_VERSION))
@@ -226,11 +241,13 @@ def main() -> int:
     uv = extract_uv(args.uv_version, args.force)
     ffmpeg = copy_ffmpeg(args.force)
     ffprobe = copy_ffprobe(args.force)
+    seven_zip = copy_7zr(args.force)
     manifest = {
         "node": node,
         "uv": uv,
         "ffmpeg": ffmpeg,
         "ffprobe": ffprobe,
+        "7zr": seven_zip,
         "platform": sys_platform(),
         "architecture": platform.machine(),
         "model_weights": "downloaded separately by the user or configured local provider",

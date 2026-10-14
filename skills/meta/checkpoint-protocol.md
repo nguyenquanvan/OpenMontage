@@ -31,6 +31,13 @@ Gather everything needed for the checkpoint:
 1. **Stage name** — which stage just completed
 2. **Status** — `"completed"` (or `"awaiting_human"` if approval needed)
 3. **Artifacts** — the canonical artifact(s) produced by this stage
+   - **Blocker checkpoint.** When you must stop before the artifact exists
+     (missing dependency, provider error, a script that copies the reference
+     video), write `status="awaiting_human"`, `artifacts={}` and
+     `error="<one-line reason, in the user's language>"`. The `error` field is
+     what makes the checkpoint valid without its artifact and what the board
+     shows; the board then offers only "Chạy lại với ghi chú", never approval.
+     A reason buried in `metadata` or `review` is invisible.
 4. **Metadata** — review findings, cost snapshot, timing info
 
 ### Step 3: Write Checkpoint

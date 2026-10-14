@@ -1137,3 +1137,42 @@ def test_review_gate_rejects_asset_manifest_with_missing_files(tmp_path, monkeyp
 
     checkpoint = json.loads((project / "checkpoint_assets.json").read_text(encoding="utf-8"))
     assert checkpoint["status"] == "awaiting_human"
+
+
+def test_review_gate_cannot_approve_a_blocker_checkpoint_without_artifacts(tmp_path, monkeypatch):
+    """An agent that pauses on a blocker leaves awaiting_human with no artifact; approve explains why it cannot proceed."""
+    projects = tmp_path / "projects"
+    project = projects / "blocked"
+    project.mkdir(parents=True)
+    (project / "project.json").write_text(
+        json.dumps({"project_id": "blocked", "title": "Blocked", "pipeline_type": "documentary-montage"}),
+        encoding="utf-8",
+    )
+    # Hand-written like the agent's own blocker checkpoints: write_checkpoint()
+    # would refuse an awaiting_human stage without its canonical artifact.
+    (project / "checkpoint_idea.json").write_text(
+        json.dumps({
+            "version": "1.0",
+            "project_id": "blocked",
+            "pipeline_type": "documentary-montage",
+            "stage": "idea",
+            "status": "awaiting_human",
+            "timestamp": "2026-10-14T01:27:06+00:00",
+            "checkpoint_policy": "guided",
+            "human_approval_required": True,
+            "human_approved": False,
+            "artifacts": {},
+            "metadata": {"runner": "codex", "blocker_review_ref": "artifacts/idea_blocker_review.json"},
+            "error": "Reference analysis blocked: missing yt_dlp",
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(state_mod, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(runner_mod, "start_run", lambda *args, **kwargs: pytest.fail("must not resume"))
+
+    with pytest.raises(ValueError, match="không có tài liệu để duyệt.*missing yt_dlp.*Chạy lại với ghi chú"):
+        runner_mod.review_gate("blocked", stage="idea", action="approve", note="")
+
+    checkpoint = json.loads((project / "checkpoint_idea.json").read_text(encoding="utf-8"))
+    assert checkpoint["status"] == "awaiting_human"
+    assert checkpoint["human_approved"] is False

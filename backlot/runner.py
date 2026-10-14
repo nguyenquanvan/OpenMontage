@@ -821,7 +821,22 @@ def _watch_process(project_id: str, project_dir: Path, process: subprocess.Popen
     else:
         marker = _read_json(project_dir / "project.json") or {}
         pipeline_type = marker.get("pipeline_type")
-        next_stage = get_next_stage(project_dir.parent, project_id, pipeline_type)
+        try:
+            next_stage = get_next_stage(project_dir.parent, project_id, pipeline_type)
+        except Exception as exc:
+            # A corrupt checkpoint must not kill the watcher thread silently;
+            # the owner needs the reason on the board.
+            run["status"] = "failed"
+            run["error"] = f"Không đọc được checkpoint của dự án: {exc}"
+            _write_json(_run_path(project_dir), run)
+            emit_event(project_dir, {
+                "tool": f"agent:{run.get('agent', 'unknown')}",
+                "event": "error",
+                "status": "failed",
+                "exit_code": return_code,
+            })
+            notifications.run_stopped(project_id, run["status"], run["error"])
+            return
         next_checkpoint = (
             _read_json(project_dir / f"checkpoint_{next_stage}.json")
             if next_stage
@@ -1120,6 +1135,15 @@ def review_gate(
         project_dir,
         artifact_references,
     )
+    if approved and not artifacts:
+        # The agent paused here on a blocker and left nothing to approve; the
+        # only way forward is to run it again with a note.
+        reason = str(checkpoint.get("error") or "").strip()
+        raise ValueError(
+            "Điểm kiểm này không có tài liệu để duyệt"
+            + (f" (agent dừng vì: {reason})" if reason else "")
+            + ". Hãy ghi chú rồi bấm 'Chạy lại với ghi chú' để agent làm tiếp."
+        )
     if approved and stage == "assets":
         from backlot.asset_materializer import asset_file_report
 

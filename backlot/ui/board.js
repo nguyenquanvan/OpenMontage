@@ -686,23 +686,31 @@ function renderApprovalReview(s) {
     ...artifactReviewContent(name, artifact),
   ));
 
+  const blocker = gateBlocker(s, awaiting);
+
   if (!artifacts.length) {
     artifacts.push(el("div", { class: "approval-missing", role: "alert" },
-      el("b", {}, "Không có tài liệu nào để duyệt. "),
-      names.length
-        ? `Điểm kiểm ${trStage(awaiting.name)} khai báo ${names.map(humanize).join(", ")}, nhưng Backlot không tải được dữ liệu.`
-        : `Điểm kiểm ${trStage(awaiting.name)} không khai báo tài liệu nào.`,
+      el("b", {}, blocker ? "Agent dừng vì gặp lỗi: " : "Không có tài liệu nào để duyệt. "),
+      blocker
+        ? blocker
+        : names.length
+          ? `Điểm kiểm ${trStage(awaiting.name)} khai báo ${names.map(humanize).join(", ")}, nhưng Backlot không tải được dữ liệu.`
+          : `Điểm kiểm ${trStage(awaiting.name)} không khai báo tài liệu nào.`,
     ));
   }
 
   return el("section", { class: "approval-review", "data-stage": awaiting.name },
     el("div", { class: "approval-review-head" },
       el("div", {},
-        el("div", { class: "approval-eyebrow" }, "CỔNG DUYỆT"),
-        el("h2", {}, `${humanize(awaiting.name)} đã sẵn sàng để bạn duyệt`),
-        el("p", {}, "Kiểm tra tài liệu, ghi chú nếu cần, rồi duyệt hoặc yêu cầu chỉnh sửa ngay tại đây."),
+        el("div", { class: "approval-eyebrow" }, blocker ? "AGENT ĐANG CHỜ BẠN" : "CỔNG DUYỆT"),
+        el("h2", {}, blocker
+          ? `${humanize(awaiting.name)} chưa làm xong`
+          : `${humanize(awaiting.name)} đã sẵn sàng để bạn duyệt`),
+        el("p", {}, blocker
+          ? "Agent dừng giữa chừng và không để lại tài liệu nào để duyệt. Ghi chú cách xử lý (ví dụ: bỏ qua video tham khảo) rồi cho agent chạy lại."
+          : "Kiểm tra tài liệu, ghi chú nếu cần, rồi duyệt hoặc yêu cầu chỉnh sửa ngay tại đây."),
       ),
-      el("span", { class: "approval-status" }, "CHỜ DUYỆT"),
+      el("span", { class: "approval-status" }, blocker ? "ĐANG DỪNG" : "CHỜ DUYỆT"),
     ),
     reviewSummary ? el("div", { class: "approval-review-note" },
       el("b", {}, "TỰ KIỂM TRA  "), shortText(reviewSummary, 260)) : null,
@@ -716,7 +724,9 @@ function renderApprovalReview(s) {
         class: "approval-feedback",
         rows: "3",
         maxlength: "4000",
-        placeholder: "Ví dụ: Đổi tiêu đề, rút ngắn phần mở đầu, dùng phương án 0 USD…",
+        placeholder: blocker
+          ? "Ví dụ: Bỏ qua video tham khảo, làm tiếp đề xuất với phong cách đã chọn và phương án 0 USD."
+          : "Ví dụ: Đổi tiêu đề, rút ngắn phần mở đầu, dùng phương án 0 USD…",
         disabled: reviewAction.busy ? true : null,
         oninput: (event) => { reviewAction.note = event.target.value; },
       }, reviewAction.note),
@@ -730,13 +740,13 @@ function renderApprovalReview(s) {
           type: "button",
           disabled: reviewAction.busy ? true : null,
           onclick: () => submitApprovalReview(awaiting.name, "revise"),
-        }, reviewAction.busy ? "ĐANG XỬ LÝ…" : "↺ YÊU CẦU CHỈNH SỬA"),
+        }, reviewAction.busy ? "ĐANG XỬ LÝ…" : blocker ? "↺ CHẠY LẠI VỚI GHI CHÚ" : "↺ YÊU CẦU CHỈNH SỬA"),
         el("button", {
           class: "approval-approve",
           type: "button",
-          disabled: reviewAction.busy || assetsBlocked ? true : null,
+          disabled: reviewAction.busy || assetsBlocked || blocker ? true : null,
           onclick: () => submitApprovalReview(awaiting.name, "approve"),
-        }, reviewAction.busy ? "ĐANG XỬ LÝ…" : assetsBlocked ? "CHƯA ĐỦ FILE ĐỂ DUYỆT" : "✓ DUYỆT & TIẾP TỤC"),
+        }, reviewAction.busy ? "ĐANG XỬ LÝ…" : blocker ? "KHÔNG CÓ GÌ ĐỂ DUYỆT" : assetsBlocked ? "CHƯA ĐỦ FILE ĐỂ DUYỆT" : "✓ DUYỆT & TIẾP TỤC"),
       ),
     ),
     el("div", { class: "approval-review-foot" },
@@ -1333,9 +1343,28 @@ function renderNoState(s) {
       "Khi agent bắt đầu production và ghi trạng thái, các bước, tài nguyên và tiến độ sẽ xuất hiện ở đây."));
 }
 
+// An awaiting_human checkpoint with no loadable artifact is the agent pausing
+// on a blocker (missing dependency, provider error). There is nothing to
+// approve; the way forward is a note and another run.
+function gateBlocker(s, awaiting) {
+  if (!awaiting || !awaiting.error) return "";
+  const loaded = artifactNamesForStage(awaiting)
+    .filter((name) => name !== "decision_log")
+    .some((name) => s.artifacts[name] && typeof s.artifacts[name] === "object");
+  return loaded ? "" : String(awaiting.error);
+}
+
 function renderAwaitingNotice(s) {
   const awaiting = s.stages.find((x) => x.status === "awaiting_human");
   if (!awaiting) return null;
+  if (gateBlocker(s, awaiting)) {
+    return el("div", { class: "notice" },
+      el("span", { style: "font-size:calc(16px * var(--fs-scale))" }, "◈"),
+      el("span", {},
+        el("b", {}, `Bước ${trStage(awaiting.name)} chưa làm xong. `),
+        "Agent dừng vì gặp lỗi và không có gì để duyệt — ghi chú cách xử lý rồi bấm ",
+        el("b", {}, "Chạy lại với ghi chú"), " ở bên dưới."));
+  }
   return el("div", { class: "notice" },
     el("span", { style: "font-size:calc(16px * var(--fs-scale))" }, "◈"),
     el("span", {},

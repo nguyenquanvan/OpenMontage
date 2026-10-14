@@ -7,6 +7,7 @@ checkpoints to resume pipelines and to present state at human checkpoints.
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,8 @@ from typing import Any, Optional
 import jsonschema
 
 from schemas.artifacts import ARTIFACT_NAMES, validate_artifact
+
+logger = logging.getLogger(__name__)
 
 # All known stages across all pipelines (used only for artifact name lookup).
 ALL_KNOWN_STAGES = frozenset([
@@ -125,6 +128,8 @@ def _validate_artifacts_for_stage(
     stage: str,
     status: str,
     artifacts: dict[str, Any],
+    *,
+    blocker: bool = False,
 ) -> None:
     # Valid stages come from the pipeline manifest (get_pipeline_stages), which
     # can declare stages beyond the 9 canonical ones (e.g. character-animation's
@@ -132,9 +137,14 @@ def _validate_artifacts_for_stage(
     # canonical artifact, so look it up defensively — a missing entry means the
     # stage simply has no required artifact, not a crash.
     required_artifact = CANONICAL_STAGE_ARTIFACTS.get(stage)
+    # An awaiting_human checkpoint that carries an error is a blocker pause: the
+    # agent stopped before producing the artifact and says why. The board shows
+    # the reason and offers a re-run, never approval (see runner.review_gate).
+    paused_on_blocker = status == "awaiting_human" and blocker
     if (
         required_artifact is not None
         and status in {"completed", "awaiting_human"}
+        and not paused_on_blocker
         and required_artifact not in artifacts
     ):
         raise CheckpointValidationError(
@@ -183,7 +193,12 @@ def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
     if not isinstance(artifacts, dict):
         raise CheckpointValidationError("Checkpoint artifacts must be a dictionary")
 
-    _validate_artifacts_for_stage(stage, status, artifacts)
+    _validate_artifacts_for_stage(
+        stage,
+        status,
+        artifacts,
+        blocker=bool(str(checkpoint.get("error") or "").strip()),
+    )
 
     try:
         jsonschema.validate(instance=checkpoint, schema=_load_checkpoint_schema())
@@ -577,7 +592,8 @@ def read_checkpoint(
     path = _checkpoint_path(pipeline_dir, project_id, stage)
     if not path.exists():
         return None
-    with open(path, encoding="utf-8") as f:
+    # utf-8-sig: agents writing checkpoints from PowerShell leave a BOM behind.
+    with open(path, encoding="utf-8-sig") as f:
         checkpoint = json.load(f)
     validate_checkpoint(checkpoint)
     return checkpoint
@@ -599,7 +615,7 @@ def get_latest_checkpoint(
     if not checkpoints:
         return None
 
-    with open(checkpoints[0], encoding="utf-8") as f:
+    with open(checkpoints[0], encoding="utf-8-sig") as f:
         checkpoint = json.load(f)
     validate_checkpoint(checkpoint)
     return checkpoint
@@ -617,7 +633,13 @@ def get_completed_stages(
     stages_to_check = get_pipeline_stages(pipeline_type)
     completed = []
     for stage in stages_to_check:
-        cp = read_checkpoint(pipeline_dir, project_id, stage)
+        try:
+            cp = read_checkpoint(pipeline_dir, project_id, stage)
+        except (CheckpointValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            # A hand-written or corrupt checkpoint must not brick the project:
+            # that stage simply does not count as completed.
+            logger.warning("Ignoring unreadable checkpoint %s/%s: %s", project_id, stage, exc)
+            continue
         if cp and cp.get("status") == "completed":
             completed.append(stage)
     return completed

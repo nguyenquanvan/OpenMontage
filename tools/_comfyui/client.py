@@ -25,11 +25,14 @@ class ComfyUIError(Exception):
     so callers can recover a timed-out-but-still-running job instead of
     losing track of it: poll ``GET /history/{prompt_id}`` directly, or
     pass ``resume_prompt_id`` back into ``ComfyUIVideo.execute()``.
+    ``timed_out`` tells a missed deadline apart from an execution error, so a
+    caller can choose to :meth:`ComfyUIClient.cancel` the job instead.
     """
 
-    def __init__(self, message: str, prompt_id: str | None = None) -> None:
+    def __init__(self, message: str, prompt_id: str | None = None, timed_out: bool = False) -> None:
         super().__init__(message)
         self.prompt_id = prompt_id
+        self.timed_out = timed_out
 
 
 class ComfyUIClient:
@@ -244,6 +247,7 @@ class ComfyUIClient:
             f"generate()/execute() again with a longer timeout and this "
             f"prompt_id to resume waiting without resubmitting.",
             prompt_id=prompt_id,
+            timed_out=True,
         )
 
     def _history_entry(self, prompt_id: str) -> dict | None:
@@ -355,6 +359,7 @@ class ComfyUIClient:
                 f"(websocket wait). The job was not cancelled — resume with "
                 f"resume_prompt_id={prompt_id!r} and a longer timeout.",
                 prompt_id=prompt_id,
+                timed_out=True,
             )
 
         entry = self._history_entry(prompt_id)
@@ -392,6 +397,30 @@ class ComfyUIClient:
         except Exception:
             remaining = max(timeout - (time.time() - started), 0)
             return self.poll(prompt_id, timeout=remaining, interval=interval)
+
+    def cancel(self, prompt_id: str) -> str:
+        """Stop *prompt_id* on the server, leaving every other client's work alone.
+
+        Drops it from the pending queue, or interrupts it when it is the prompt
+        being executed (``/interrupt`` gets the id, so servers that support
+        targeted interrupts also refuse to stop anything else). Returns
+        ``"removed"``, ``"interrupted"`` or ``"not_queued"`` (already finished
+        or unknown to the server).
+        """
+
+        def queued(key: str) -> bool:
+            resp = requests.get(f"{self.server_url}/queue", timeout=10)
+            resp.raise_for_status()
+            return any(len(item) > 1 and item[1] == prompt_id for item in resp.json().get(key) or [])
+
+        removed = queued("queue_pending")
+        if removed:
+            requests.post(f"{self.server_url}/queue", json={"delete": [prompt_id]}, timeout=10).raise_for_status()
+        # Checked after the delete too: the prompt may have started in between.
+        if queued("queue_running"):
+            requests.post(f"{self.server_url}/interrupt", json={"prompt_id": prompt_id}, timeout=10).raise_for_status()
+            return "interrupted"
+        return "removed" if removed else "not_queued"
 
     def download(
         self,

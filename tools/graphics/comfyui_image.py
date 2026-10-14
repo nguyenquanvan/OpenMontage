@@ -47,6 +47,13 @@ _SCHNELL = "flux1-schnell-gguf-txt2img"
 # schnell is distilled for 1-4 steps; more only costs time.
 _SCHNELL_DEFAULT_STEPS = 4
 _SCHNELL_MAX_STEPS = 8
+# A schnell image takes ~18 s on an 8 GB card; ten minutes means the GPU is starved or ComfyUI is stuck.
+_IMAGE_TIMEOUT_SECONDS = 600
+_CANCEL_OUTCOMES = {
+    "removed": "removed from the ComfyUI queue",
+    "interrupted": "interrupted on the ComfyUI server",
+    "not_queued": "no longer queued on the ComfyUI server",
+}
 _LICENSES = {
     _FLUX2: {
         "name": "FLUX.2 [dev] Non-Commercial License",
@@ -137,7 +144,9 @@ class ComfyUIImage(BaseTool):
                     "Many images in one call, e.g. every scene of a chapter. Each item needs prompt "
                     "and output_path and may set seed, width, height; top-level width, height and "
                     "steps apply to items that omit them. Keep a call to about 25 images so it ends "
-                    "within agent command timeouts."
+                    "within agent command timeouts. An image that takes over 10 minutes is cancelled on "
+                    "the ComfyUI server and the rest of the batch is skipped (data.stopped_after_timeout); "
+                    "retry those items once the GPU is free."
                 ),
                 "items": {
                     "type": "object",
@@ -332,11 +341,18 @@ class ComfyUIImage(BaseTool):
             # A schnell image takes ~16 s, so the default 5 s REST poll (used when
             # websocket-client is absent, as in the packaged app) added ~4 s each.
             paths = self._client.generate(
-                workflow, output_node=output_node, dest=output_path, timeout=600, interval=1,
+                workflow, output_node=output_node, dest=output_path, timeout=_IMAGE_TIMEOUT_SECONDS, interval=1,
             )
 
         except ComfyUIError as exc:
-            return ToolResult(success=False, error=str(exc))
+            if not (exc.timed_out and exc.prompt_id):
+                return ToolResult(success=False, error=str(exc))
+            # Never leave a timed-out image drawing after this call returns: the agent has moved on
+            # and the job would keep the GPU busy. Keep the image only if it finished just now.
+            outcome = self._cancel(exc.prompt_id)
+            paths = self._finished_outputs(exc.prompt_id, output_node, output_path) if outcome == "not_queued" else None
+            if not paths:
+                return self._timed_out_result(exc.prompt_id, outcome, output_path)
         except Exception as exc:
             return ToolResult(success=False, error=f"ComfyUI image generation failed: {exc}")
 
@@ -367,25 +383,68 @@ class ComfyUIImage(BaseTool):
         """Generate every item in one process: one agent call instead of one per image."""
         shared = {key: value for key, value in inputs.items() if key not in {"batch", "prompt", "output_path", "seed"}}
         start = time.time()
+        items = list(inputs["batch"])
         results: list[dict[str, Any]] = []
         artifacts: list[str] = []
-        for item in inputs["batch"]:
+        stopped = False
+        for index, item in enumerate(items):
             result = self.execute({**shared, **item})
             entry: dict[str, Any] = {"output_path": item.get("output_path"), "success": result.success, "seed": result.seed}
             if result.success:
                 artifacts.extend(result.artifacts)
-                entry["data"] = result.data
             else:
                 entry["error"] = result.error
+            if result.data:
+                entry["data"] = result.data
             results.append(entry)
+            if (result.data or {}).get("timed_out"):
+                # A server too slow for one image stalls the next ones too; stop rather than queue more work.
+                stopped = True
+                results.extend(
+                    {"output_path": rest.get("output_path"), "success": False, "skipped": True,
+                     "error": "not started: an earlier image in this batch timed out"}
+                    for rest in items[index + 1:]
+                )
+                break
         failed = sum(1 for entry in results if not entry["success"])
+        error = f"{failed}/{len(results)} images failed; see data.results" if failed else None
+        if stopped:
+            error += ". The batch stopped after a timeout; retry the failed and skipped items when the GPU is free"
         return ToolResult(
             success=failed == 0,
-            data={"provider": "comfyui", "count": len(results), "failed": failed, "results": results},
+            data={"provider": "comfyui", "count": len(results), "failed": failed, "results": results,
+                  "stopped_after_timeout": stopped},
             artifacts=artifacts,
-            error=f"{failed}/{len(results)} images failed; see data.results" if failed else None,
+            error=error,
             cost_usd=0.0,
             duration_seconds=round(time.time() - start, 2),
+        )
+
+    def _cancel(self, prompt_id: str) -> str:
+        try:
+            return self._client.cancel(prompt_id)
+        except Exception as exc:
+            return f"cancel_failed: {exc}"
+
+    def _finished_outputs(self, prompt_id: str, output_node: str, output_path: Path) -> list[Path] | None:
+        """Download the image of a prompt that completed between the deadline and the cancel, if any."""
+        try:
+            return self._client.generate(
+                {}, output_node=output_node, dest=output_path, timeout=5, interval=1, resume_prompt_id=prompt_id,
+            )
+        except Exception:
+            return None
+
+    def _timed_out_result(self, prompt_id: str, outcome: str, output_path: Path) -> ToolResult:
+        what = _CANCEL_OUTCOMES.get(outcome, f"NOT cancelled ({outcome}); it may still be running")
+        return ToolResult(
+            success=False,
+            error=(
+                f"ComfyUI did not finish {output_path.name} within {_IMAGE_TIMEOUT_SECONDS}s, so its job "
+                f"(prompt {prompt_id}) was {what} instead of being left to run. The GPU is usually taken by "
+                f"another program: check {self._client.server_url}/queue and free VRAM, then retry this image."
+            ),
+            data={"timed_out": True, "prompt_id": prompt_id, "cancelled": outcome, "output_path": str(output_path)},
         )
 
     def _unavailable_reason(self) -> str:

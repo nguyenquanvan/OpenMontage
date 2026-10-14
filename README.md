@@ -794,7 +794,7 @@ If you'd like to go further, [sponsor the project](https://github.com/sponsors/c
 MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
 
-Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.9` · build `20261014.6`**. App hiển thị
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.10` · build `20261014.7`**. App hiển thị
 phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
 `GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
 trong `lib/app_version.py`.
@@ -837,6 +837,12 @@ workflow vẫn dừng ở từng cổng như cũ.
 `comfyui_image` dùng FLUX.2 Dev khi máy có đủ ba file của nó. Nếu không, tool tự chuyển sang
 FLUX.1 schnell GGUF (cần custom node ComfyUI-GGUF), bản chạy được trên card 8 GB và được dùng
 thương mại. Mặc định ComfyUI ở `http://127.0.0.1:8188`.
+
+Ảnh nào quá 10 phút chưa xong (card thường đang bị chương trình khác chiếm) thì `comfyui_image` tự
+huỷ đúng việc của nó trên ComfyUI: gỡ khỏi hàng đợi nếu chưa chạy, ngắt nếu đang chạy, không đụng
+việc của chương trình khác. Một lô ảnh dừng ngay tại ảnh đó; các ảnh sau được đánh dấu bỏ qua để
+agent vẽ lại khi card rảnh, thay vì để ComfyUI tiếp tục vẽ sau khi agent đã dừng. Video và nhạc
+ComfyUI vẫn giữ việc đang chạy để chờ tiếp bằng `resume_prompt_id`.
 
 ### Ảnh minh hoạ miễn phí: gói "FLUX.1 schnell" trong Model Center
 

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from tools._comfyui.client import ComfyUIError
 from tools.base_tool import ToolStatus
 from tools.graphics import comfyui_image as module
 from tools.graphics.comfyui_image import ComfyUIImage, _schnell_models
@@ -24,9 +25,16 @@ FLUX2 = {
 
 
 class FakeClient:
+    server_url = "http://127.0.0.1:8188"
+
     def __init__(self, models, available=True, root=None, starts=True):
         self.models, self.available, self.submitted = models, available, []
         self.root, self.starts, self.start_calls = root, starts, 0
+        self.cancelled, self.cancel_outcome = [], "interrupted"
+
+    def cancel(self, prompt_id):
+        self.cancelled.append(prompt_id)
+        return self.cancel_outcome
 
     def is_available(self):
         return self.available
@@ -48,7 +56,7 @@ class FakeClient:
     def unavailable_reason(self):
         return "ComfyUI server not reachable"
 
-    def generate(self, workflow, *, output_node, dest, timeout, interval=5):
+    def generate(self, workflow, *, output_node, dest, timeout, interval=5, resume_prompt_id=None):
         self.submitted.append((workflow, output_node))
         self.interval = interval
         Path(dest).write_bytes(b"png")
@@ -208,3 +216,85 @@ def test_batch_reports_failed_items_without_hiding_the_rest(tmp_path):
     assert result.data["failed"] == 1
     assert result.artifacts == [str(tmp_path / "ok.png")]
     assert "GPU out of memory" in result.data["results"][1]["error"]
+
+
+def stalls_on(tool, *prompts):
+    """Make generate() miss its deadline for the given prompts, like a GPU starved by another program."""
+    real_generate = tool._client.generate
+
+    def generate(workflow, **kwargs):
+        if kwargs.get("resume_prompt_id"):
+            raise ComfyUIError("still running", prompt_id=kwargs["resume_prompt_id"], timed_out=True)
+        if workflow["4"]["inputs"]["text"] in prompts:
+            tool._client.submitted.append((workflow, kwargs["output_node"]))
+            raise ComfyUIError("did not complete within 600s", prompt_id=f"id-{workflow['4']['inputs']['text']}",
+                               timed_out=True)
+        return real_generate(workflow, **kwargs)
+
+    tool._client.generate = generate
+
+
+def test_a_timed_out_image_is_cancelled_on_the_server(tmp_path):
+    tool = tool_with(SCHNELL_ONLY)
+    stalls_on(tool, "slow")
+
+    result = tool.execute({"prompt": "slow", "output_path": str(tmp_path / "s01.png")})
+
+    assert not result.success
+    assert tool._client.cancelled == ["id-slow"]
+    assert result.data == {"timed_out": True, "prompt_id": "id-slow", "cancelled": "interrupted",
+                           "output_path": str(tmp_path / "s01.png")}
+    assert "interrupted on the ComfyUI server" in result.error
+    assert "8188/queue" in result.error
+
+
+def test_an_image_that_finished_at_the_deadline_is_kept(tmp_path):
+    tool = tool_with(SCHNELL_ONLY)
+    tool._client.cancel_outcome = "not_queued"
+    calls = []
+
+    def generate(workflow, **kwargs):
+        calls.append(kwargs.get("resume_prompt_id"))
+        if not kwargs.get("resume_prompt_id"):
+            raise ComfyUIError("did not complete within 600s", prompt_id="id-1", timed_out=True)
+        Path(kwargs["dest"]).write_bytes(b"png")
+        return [Path(kwargs["dest"])]
+
+    tool._client.generate = generate
+    result = tool.execute({"prompt": "p", "output_path": str(tmp_path / "s01.png")})
+
+    assert result.success, result.error
+    assert calls == [None, "id-1"]
+    assert result.artifacts == [str(tmp_path / "s01.png")]
+
+
+def test_execution_errors_are_reported_without_cancelling(tmp_path):
+    tool = tool_with(SCHNELL_ONLY)
+
+    def broken(workflow, **kwargs):
+        raise ComfyUIError("Execution error: out of memory", prompt_id="id-1")
+
+    tool._client.generate = broken
+    result = tool.execute({"prompt": "p", "output_path": str(tmp_path / "s01.png")})
+
+    assert not result.success and "out of memory" in result.error
+    assert tool._client.cancelled == []
+
+
+def test_a_batch_stops_at_the_first_timeout_and_skips_the_rest(tmp_path):
+    tool = tool_with(SCHNELL_ONLY)
+    stalls_on(tool, "s2")
+
+    result = tool.execute({"batch": [
+        {"prompt": f"s{n}", "output_path": str(tmp_path / f"s{n}.png")} for n in range(1, 5)
+    ]})
+
+    assert not result.success
+    assert [workflow["4"]["inputs"]["text"] for workflow, _ in tool._client.submitted] == ["s1", "s2"]
+    assert tool._client.cancelled == ["id-s2"]
+    assert result.artifacts == [str(tmp_path / "s1.png")]
+    assert result.data["stopped_after_timeout"] is True
+    assert result.data["failed"] == 3
+    assert result.data["results"][1]["data"]["prompt_id"] == "id-s2"
+    assert [entry.get("skipped", False) for entry in result.data["results"]] == [False, False, True, True]
+    assert "stopped after a timeout" in result.error

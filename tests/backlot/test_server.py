@@ -514,14 +514,13 @@ class TestBacklotServerApi:
         assert "tối đa 200.000" in response.json()["detail"]
         assert not (projects_root / "too-long-script").exists()
 
-    def test_create_health_project_rejects_free_text_over_default_limit(self, client):
-        # `angle` declares no max_length, so the 4 000-character default applies.
-        response = client.post(
-            "/api/projects",
-            json=_health_payload("too-long-angle", angle="a" * 4_001),
-        )
-        assert response.status_code == 400
-        assert "tối đa 4.000" in response.json()["detail"]
+    def test_intake_field_without_its_own_limit_uses_the_default(self):
+        manifest = {"project_intake": {"fields": [{"name": "note", "label": "Ghi chú", "type": "text"}]}}
+        with pytest.raises(server_mod.HTTPException) as excinfo:
+            server_mod._validate_project_intake(manifest, {"note": "a" * 4_001})
+        assert "Ghi chú quá dài (tối đa 4.000 ký tự)" == excinfo.value.detail
+        values, brief, files = server_mod._validate_project_intake(manifest, {"note": "a" * 4_000})
+        assert values == {"note": "a" * 4_000} and files == {}
 
     def test_create_health_project_without_own_script_writes_no_file(self, client, projects_root):
         created = client.post("/api/projects", json=_health_payload("no-script", own_script=""))

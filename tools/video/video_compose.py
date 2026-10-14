@@ -367,6 +367,26 @@ class VideoCompose(BaseTool):
         return path.suffix.lower() in VideoCompose._IMAGE_EXTENSIONS
 
     @staticmethod
+    def _media_duration(path: Path) -> float | None:
+        """Container duration in seconds from ffprobe, or None when unknown."""
+        try:
+            out = subprocess.check_output(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=nw=1:nk=1",
+                    str(path),
+                ],
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=30,
+            )
+            value = float(out.strip().splitlines()[0])
+        except Exception:
+            return None
+        return value if value > 0 else None
+
+    @staticmethod
     def _has_audio_stream(path: Path) -> bool:
         """Return True iff ffprobe reports at least one audio stream.
 
@@ -402,6 +422,16 @@ class VideoCompose(BaseTool):
         temp_output = video_path.with_name(
             f".{video_path.stem}.audio-mux-{time.time_ns()}{video_path.suffix}"
         )
+        # Pad or trim the audio to the video's own length. An unbounded
+        # "apad" relied on "-shortest" to stop, and the FFmpeg 7.1 bundled in
+        # the desktop app never stops with a stream-copied video: the mux
+        # spun forever at full CPU.
+        duration = self._media_duration(video_path)
+        if duration:
+            length_args = ["-af", f"apad=whole_dur={duration:.3f}", "-t", f"{duration:.3f}"]
+        else:
+            length_args = ["-shortest"]
+        timeout = max(120, int((duration or 0) * 3) + 60)
         try:
             self.run_command([
                 "ffmpeg", "-y",
@@ -412,11 +442,10 @@ class VideoCompose(BaseTool):
                 "-c:v", "copy",
                 "-c:a", "aac",
                 "-b:a", "192k",
-                "-af", "apad",
-                "-shortest",
+                *length_args,
                 "-movflags", "+faststart",
                 str(temp_output),
-            ])
+            ], timeout=timeout)
             if not temp_output.is_file():
                 return ToolResult(
                     success=False,

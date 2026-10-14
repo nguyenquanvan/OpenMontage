@@ -794,7 +794,7 @@ If you'd like to go further, [sponsor the project](https://github.com/sponsors/c
 MOSA TOOL ALL có launcher desktop native cho Backlot. Bản cài giữ project và API
 key trong thư mục dữ liệu riêng của người dùng, không nằm trong app bundle.
 
-Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.5` · build `20261014.2`**. App hiển thị
+Phiên bản hiện tại: **MOSA TOOL ALL `v1.6.6` · build `20261014.3`**. App hiển thị
 phiên bản ở thư viện dự án, board và **Cài đặt API**; API kiểm tra nhanh là
 `GET /api/version`. Mỗi lần phát hành mới cần tăng `APP_VERSION` hoặc `APP_BUILD`
 trong `lib/app_version.py`.

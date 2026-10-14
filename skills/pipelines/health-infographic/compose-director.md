@@ -17,6 +17,7 @@ Read `edit_decisions.render_runtime` and route without substitution. For `remoti
 5. Write `render_report` and `final_review`; do not hide warnings.
 6. Inspect at least one frame from every Professional Motion Pack scene type used and verify transitions at the scene boundaries.
 7. For `chalk_scene`, inspect a frame after the sentence finishes writing: the sentence is complete, legible, and clear of the drawing; in `in_image` mode, also check its spelling against the script.
+8. Own Script Mode (Kịch bản có sẵn): copy `script.metadata.unverified_claims` into `final_review.metadata.unverified_claims` and name each sentence in `issues_found`, or state that there are none, so the user can decide before uploading.
 
 ## Quality Checklist
 

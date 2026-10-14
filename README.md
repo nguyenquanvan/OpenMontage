@@ -855,6 +855,18 @@ chứng, source cho từng claim, disclaimer y khoa và duyệt người dùng t
 sinh chi phí. Video tham khảo chỉ dùng để phân tích phong cách, không sao chép nội
 dung hoặc tài sản của tác giả.
 
+Ô **Kịch bản có sẵn (tuỳ chọn)** nhận kịch bản lời đọc của bạn (tối đa 200.000 ký tự), lưu
+thành `inputs/own-script.md`. App đọc nguyên văn — không viết lại, rút gọn hay đảo câu — chỉ
+kiểm chứng và gắn nguồn cho từng claim; thời lượng tính theo số từ (~140 từ/phút). Câu chưa có
+nguồn được liệt kê trong kịch bản, bản duyệt cuối và gói xuất bản để bạn quyết, không bị xoá
+ngầm. Cổng đề xuất (chi phí) và cổng kịch bản (bản chia đoạn kèm nguồn) vẫn dừng như thường;
+bật **Chạy thẳng** thì chỉ còn dừng ở cổng kịch bản khi có câu chưa nguồn. Nếu kịch bản trùng
+lời thoại của video tham khảo, workflow dừng và báo, kể cả khi chạy thẳng.
+
+Khi agent dừng giữa chừng mà không có tài liệu để duyệt (thiếu thư viện, provider lỗi), board
+hiện lý do với tiêu đề "chưa làm xong" và chỉ còn nút **Chạy lại với ghi chú**; checkpoint kiểu
+này hợp lệ khi có trường `error`, và một checkpoint hỏng không còn làm kẹt dự án.
+
 ### Professional Motion Pack
 
 Luồng `health-infographic` có bốn phong cách chọn ngay khi tạo dự án:

@@ -33,15 +33,17 @@ project_intake:
 
     Chủ đề: {topic}
     Đối tượng xem: {audience}
-    Thời lượng mục tiêu: {duration_minutes} phút
+    Thời lượng mục tiêu: {duration_minutes} phút (bỏ qua khi có kịch bản có sẵn; khi đó tính theo số từ ở 140 từ/phút)
     Ngôn ngữ narration và phụ đề: {language}
     Góc nội dung mong muốn: {angle}
     Phong cách hình ảnh: {visual_style}
     Cường độ chuyển động: {motion_intensity}
     Tỷ lệ khung hình: {aspect_ratio}
     Video tham khảo (chỉ dùng để phân tích phong cách, không sao chép): {reference_url}
+    Kịch bản có sẵn: {own_script}
 
     Yêu cầu bắt buộc:
+    - Nếu có kịch bản có sẵn (inputs/own-script.md): đọc nguyên văn làm narration, không viết lại hay rút gọn; chỉ kiểm chứng và gắn nguồn cho từng claim, liệt kê câu chưa có nguồn để người dùng quyết, thêm disclaimer nếu thiếu; thời lượng theo kịch bản, không theo ô Thời lượng. Nếu kịch bản trùng lời thoại của video tham khảo thì dừng và báo, không dựng.
     - Nghiên cứu từ nguồn y khoa/khoa học đáng tin cậy và gắn nguồn cho mọi tuyên bố sức khỏe.
     - Phân biệt rõ bằng chứng trên người, bằng chứng tiền lâm sàng và giả thuyết.
     - Không chẩn đoán, kê đơn, cam kết điều trị hoặc phóng đại quan hệ nhân quả.
@@ -141,6 +143,15 @@ project_intake:
       type: url
       default: "https://www.youtube.com/watch?v=XWQwzV-BplU"
       placeholder: "https://www.youtube.com/watch?v=..."
+    - name: own_script
+      label: "Kịch bản có sẵn (tuỳ chọn)"
+      type: textarea
+      required: false
+      rows: 10
+      max_length: 200000
+      store: file
+      placeholder: "Dán kịch bản lời đọc của bạn. Để trống nếu muốn app tự nghiên cứu và viết."
+      help: "Có kịch bản thì app đọc nguyên văn, chỉ kiểm chứng và gắn nguồn rồi chia cảnh, vẽ, đọc và dựng; bạn vẫn duyệt chi phí (đề xuất) và bản chia đoạn kèm nguồn (kịch bản), trừ khi bật Chạy thẳng. Lưu thành inputs/own-script.md trong dự án. Tối đa 200.000 ký tự."
 
 extensions:
   custom_scripts: true
@@ -224,7 +235,7 @@ stages:
     review_focus:
       - Mọi câu factual có source_ref
       - Không có ngôn ngữ chẩn đoán, kê đơn hoặc cam kết kết quả
-      - Nhịp narration phù hợp thời lượng mục tiêu
+      - Nhịp narration phù hợp thời lượng mục tiêu, hoặc theo số từ của kịch bản có sẵn ở 140 từ/phút
       - Disclaimer rõ, ngắn và không bị che khuất
     success_criteria:
       - Schema-valid script

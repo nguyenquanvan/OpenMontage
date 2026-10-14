@@ -16,6 +16,17 @@ Build a clear arc: surprising but accurate hook → define the question → expl
 - Avoid diagnosis, prescriptions, personalized dosage, guaranteed outcomes, fear, and miracle language.
 - If the title/hook is strong, the body must immediately narrow it to what the evidence actually shows.
 
+## Own Script Mode (Kịch bản có sẵn)
+
+When the brief says `Kịch bản có sẵn: có — inputs/own-script.md ...`, assemble the user's text instead of writing:
+
+- `sections` are the script's paragraphs in their original order and `text` is each paragraph verbatim. Do not rewrite, shorten, reorder, or merge; add only `pronunciation_guides`, `delivery_cues`, and overlay suggestions.
+- Each section's `source_ref` is always the `claim_id` of its matrix row — also for rows whose `status` is `unverified`, so the reason stays reachable. Every unverified sentence goes into `metadata.unverified_claims` as `{section_id, claim_id, sentence, reason}`. Do not delete or soften them.
+- The narration language is the script's language; the "Ngôn ngữ" field only shapes subtitles and metadata.
+- `total_duration_seconds` and section timings derive from the text: `len(text.split())` words at about 140 words per minute, not from the "Thời lượng" field.
+- Append the educational-use disclaimer as a final section only when the script has none.
+- For `health-chalkboard`, each scene's chalk sentence is drawn from the script's own sentences (a clause of one when it exceeds 14 words), never newly written.
+
 ## Voice and Captions
 
 Write conversational sentences, pronunciation guides for scientific terms, purposeful pauses before comparisons, and short overlay text rather than duplicating full narration. End with an educational-use disclaimer and, where relevant, a prompt to consult a qualified clinician.

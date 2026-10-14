@@ -258,6 +258,7 @@ aside .panel:nth-of-type(1) { animation-delay: .32s } aside .panel:nth-of-type(2
 .project-intake-head p { color: var(--text-2); font-size: calc(11px * var(--fs-scale)); }
 .project-intake-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .project-intake-fields label.wide { grid-column: span 2; }
+.project-intake-fields label.full { grid-column: 1 / -1; }
 .project-intake-fields small { color: var(--text-3); line-height: 1.4; }
 .create-project-button { border: 1px solid var(--amber); border-radius: 6px; padding: 11px 13px; background: var(--amber); color: var(--cream-ink); cursor: pointer; font: 700 calc(10px * var(--fs-scale)) var(--mono); white-space: nowrap; }
 .create-project-button:hover { filter: brightness(1.08); }
@@ -322,7 +323,8 @@ aside .panel:nth-of-type(1) { animation-delay: .32s } aside .panel:nth-of-type(2
   .new-project { padding: 20px; }
   .new-project-form { grid-template-columns: 1fr; }
   .project-intake-fields { grid-template-columns: 1fr; }
-  .project-intake-fields label.wide { grid-column: auto; }
+  .project-intake-fields label.wide,
+  .project-intake-fields label.full { grid-column: auto; }
   .project-intake-head, .workflow-actions { display: block; }
   .workflow-use-button { margin-top: 12px; }
   .new-project-status { grid-column: auto; }

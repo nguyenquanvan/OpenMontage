@@ -79,6 +79,23 @@ def _make_project(root: Path, project_id: str = "film") -> Path:
     return project
 
 
+def _health_payload(project_id: str, **intake: str) -> dict:
+    values = {
+        "topic": "Gừng sống và gừng nấu chín khác nhau thế nào?",
+        "audience": "Người trưởng thành",
+        "duration_minutes": "8",
+        "language": "Tiếng Việt",
+        "reference_url": "",
+    }
+    values.update(intake)
+    return {
+        "project_id": project_id,
+        "title": "Health",
+        "pipeline_type": "health-infographic",
+        "intake": values,
+    }
+
+
 def _write_png(path: Path, color: tuple[int, int, int] = (200, 40, 80)) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     img = Image.new("RGB", (24, 16), color)
@@ -459,6 +476,60 @@ class TestBacklotServerApi:
         )
         assert bad_url.status_code == 400
 
+    def test_create_health_project_stores_own_script_as_file(self, client, projects_root):
+        sentence = "Gừng sống chứa gingerol còn gừng nấu chín chứa nhiều shogaol hơn. "
+        script = ((sentence * 5).strip() + "\n") * 62
+        script = script.strip()
+        assert 19_000 < len(script) < 21_000
+
+        created = client.post(
+            "/api/projects",
+            json=_health_payload("own-script", own_script=f"  {script}\n\n"),
+        )
+        assert created.status_code == 201, created.json()
+
+        script_file = projects_root / "own-script" / "inputs" / "own-script.md"
+        raw = script_file.read_bytes()
+        assert not raw.startswith(b"\xef\xbb\xbf")
+        assert b"\r" not in raw
+        assert raw.decode("utf-8") == script + "\n"
+
+        marker = json.loads((projects_root / "own-script" / "project.json").read_text(encoding="utf-8"))
+        assert marker["intake"]["own_script"] == "inputs/own-script.md"
+        brief = marker["brief"]
+        words = len(script.split())
+        assert (
+            f"Kịch bản có sẵn: có — inputs/own-script.md, {words} từ (~{round(words / 140)} phút ở 140 từ/phút)"
+            in brief
+        )
+        assert sentence.strip() not in brief
+        assert len(brief) < 12_000
+
+    def test_create_health_project_rejects_own_script_over_its_limit(self, client, projects_root):
+        response = client.post(
+            "/api/projects",
+            json=_health_payload("too-long-script", own_script="a" * 200_001),
+        )
+        assert response.status_code == 400
+        assert "tối đa 200.000" in response.json()["detail"]
+        assert not (projects_root / "too-long-script").exists()
+
+    def test_create_health_project_rejects_topic_over_default_limit(self, client):
+        response = client.post(
+            "/api/projects",
+            json=_health_payload("too-long-topic", topic="a" * 4_001),
+        )
+        assert response.status_code == 400
+        assert "tối đa 4.000" in response.json()["detail"]
+
+    def test_create_health_project_without_own_script_writes_no_file(self, client, projects_root):
+        created = client.post("/api/projects", json=_health_payload("no-script", own_script=""))
+        assert created.status_code == 201
+        marker = json.loads((projects_root / "no-script" / "project.json").read_text(encoding="utf-8"))
+        assert marker["intake"]["own_script"] == ""
+        assert "Kịch bản có sẵn: không có" in marker["brief"]
+        assert not (projects_root / "no-script" / "inputs" / "own-script.md").exists()
+
     @pytest.mark.parametrize(
         "payload",
         [
@@ -591,3 +662,47 @@ class TestFindingsFixes:
         fake_video.write_bytes(b"\x00" * 4096)
         res = client.get("/thumb/vid/renders/final.mp4")
         assert res.status_code == 404  # never the raw video bytes (F-03)
+
+
+class TestOwnScriptIntakeHardening:
+    def test_crlf_script_is_normalised_before_the_limit_and_the_file(self, client, projects_root):
+        script = "\r\n".join(["Dòng một.", "Dòng hai.", "Dòng ba."]) + "\r\rDòng bốn."
+        created = client.post("/api/projects", json=_health_payload("crlf-script", own_script=script))
+        assert created.status_code == 201, created.json()
+
+        raw = (projects_root / "crlf-script" / "inputs" / "own-script.md").read_bytes()
+        assert b"\r" not in raw
+        assert raw.decode("utf-8") == "Dòng một.\nDòng hai.\nDòng ba.\n\nDòng bốn.\n"
+
+        # 210 000 raw characters are 140 000 once normalised: under the limit.
+        long_crlf = "a\r\n" * 70_000
+        created = client.post("/api/projects", json=_health_payload("crlf-long", own_script=long_crlf))
+        assert created.status_code == 201, created.json()
+
+    def test_non_text_and_unencodable_scripts_are_rejected_before_any_write(self, client, projects_root):
+        response = client.post("/api/projects", json=_health_payload("list-script", own_script=["x", "y"]))
+        assert response.status_code == 400
+        assert "không hợp lệ" in response.json()["detail"]
+        assert not (projects_root / "list-script").exists()
+
+        body = json.dumps(_health_payload("surrogate-script", own_script="Gừng sống tốt. \ud800 Hết."))
+        response = client.post("/api/projects", content=body, headers={"Content-Type": "application/json"})
+        assert response.status_code == 400
+        assert "ký tự không hợp lệ" in response.json()["detail"]
+        assert not (projects_root / "surrogate-script").exists()
+
+    def test_failed_script_write_removes_the_half_made_project(self, client, projects_root):
+        def explode(project_dir, files):
+            raise OSError("disk full")
+
+        # A scoped patch: the fixtures' own monkeypatches must survive the retry.
+        with pytest.MonkeyPatch.context() as scoped:
+            scoped.setattr(server_mod, "_write_intake_files", explode)
+            response = client.post("/api/projects", json=_health_payload("disk-full", own_script="Một kịch bản."))
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+        assert not (projects_root / "disk-full").exists()
+
+        retry = client.post("/api/projects", json=_health_payload("disk-full", own_script="Một kịch bản."))
+        assert retry.status_code == 201, retry.json()
+        assert (projects_root / "disk-full" / "inputs" / "own-script.md").is_file()

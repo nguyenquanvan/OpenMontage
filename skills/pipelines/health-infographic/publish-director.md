@@ -8,6 +8,10 @@ Use after final review to create a publish-ready package for a health infographi
 
 Include the final video, thumbnail concept, title options, description, chapter markers, subtitle file, bibliography, disclaimer, and a source-to-claim table. Keep source links direct and preserve access dates when available.
 
+## Own Script Mode (Kịch bản có sẵn)
+
+When the project was narrated from `inputs/own-script.md`, the publish summary presented at the gate and `publish_log.metadata.unverified_claims` must list every sentence in `script.metadata.unverified_claims` with its reason, or state that there are none, so the user decides before uploading. Never upload with that list unshown.
+
 ## Metadata Rules
 
 - Titles and thumbnails may create curiosity but must not promise cures, guaranteed blood-sugar changes, or personalized outcomes.

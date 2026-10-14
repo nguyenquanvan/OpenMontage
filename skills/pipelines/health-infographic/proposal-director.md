@@ -26,6 +26,10 @@ When the project's style playbook is `health-chalkboard`, every scene is a chalk
 
 For English narration recommend the local `kokoro_tts` voice `am_michael` (Apache-2.0, free) at speed 0.95. Budget one image per 8–15 seconds of narration. `chalk_scene` exists only in Remotion, so recommend Remotion with `composition_mode: "templated"` for this style and say why when presenting both runtimes.
 
+## Own Script Mode (Kịch bản có sẵn)
+
+When the brief says `Kịch bản có sẵn: có — inputs/own-script.md ...`, do not generate concepts: the narration, its structure, and its duration (word count at about 140 words per minute) are fixed. Still present and lock everything else — both composition runtimes and `composition_mode`, image and TTS providers and voice, chalk text mode when the style is `health-chalkboard`, music plan, disclaimer text, citation display, and itemized cost. The 10–15 second sample uses the script's opening sentences, read verbatim. List the research rows marked `unverified` so the user sees which sentences still lack a source before approving spend. The `proposal_packet` schema still needs three `concept_options`: write three that share the script verbatim (hook = its opening sentence, structure = its paragraphs) and differ only in visual approach, provider path, and cost, so the user chooses by cost and look, never by rewriting.
+
 ## Approval Packet
 
 - Present at least one low-cost/local path and one quality-first path when available.

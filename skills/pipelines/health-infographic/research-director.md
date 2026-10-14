@@ -17,6 +17,16 @@ Prefer, in order: government/public-health guidance; clinical guidelines; system
 5. For food chemistry, distinguish changes measured in compounds from proven changes in human outcomes.
 6. Produce the normal schema-valid `research_brief`; use its data points and sources as the public evidence trail.
 
+## Own Script Mode (Kịch bản có sẵn)
+
+When the brief says `Kịch bản có sẵn: có — inputs/own-script.md ...`, the script, not the topic, sets the research questions:
+
+1. Split `inputs/own-script.md` into sentences and build `metadata.claim_evidence_matrix` from them: one row per factual claim, quoting the sentence exactly so the script director can match it back. Skip greetings, transitions, and opinions that make no checkable claim.
+2. Search the source hierarchy above for each row and fill source URL, evidence type, population, confidence, and limitations as usual. Set `status` to `supported` when a source backs the sentence as written.
+3. Rows you cannot support get `status: "unverified"` and a `reason` (no source found, evidence contradicts the sentence, causal wording stronger than the evidence, dosage not in guidance). Never drop or reword the sentence; the user decides later.
+4. `metadata.medical_safety_notes` is still required.
+5. The `research_brief` schema still requires at least five sources. When the script carries fewer sourced claims, add guideline or background sources for its topic (they also feed the safety notes); never pad the list with the reference video.
+
 ## Rejection Rules
 
 - Reject claims supported only by testimonials, affiliate pages, unsourced infographics, or AI summaries.

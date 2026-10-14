@@ -140,7 +140,11 @@ function intakeControl(field) {
     }, option.label)));
   }
   if (field.type === "textarea") {
-    return el("textarea", { ...common, rows: "3" }, field.default ?? "");
+    return el("textarea", {
+      ...common,
+      rows: String(field.rows || 3),
+      maxlength: field.max_length ?? null,
+    }, field.default ?? "");
   }
   return el("input", {
     ...common,
@@ -149,6 +153,21 @@ function intakeControl(field) {
     min: field.min ?? null,
     max: field.max ?? null,
   });
+}
+
+function fmtThousands(value) {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+function intakeCounter(field, control) {
+  if (field.type !== "textarea" || !field.max_length) return null;
+  const counter = el("small", { class: "intake-counter" });
+  const update = () => {
+    counter.textContent = `${fmtThousands(control.value.length)} / ${fmtThousands(field.max_length)} ký tự`;
+  };
+  control.addEventListener("input", update);
+  update();
+  return counter;
 }
 
 function renderProjectIntake() {
@@ -160,11 +179,17 @@ function renderProjectIntake() {
     newProjectForm.querySelector(".create-project-button").textContent = "KHỞI TẠO & MỞ BOARD";
     return;
   }
-  const fields = (config.fields || []).map((field) => el("label", { class: field.type === "textarea" ? "wide" : "" },
-    el("span", {}, field.label),
-    intakeControl(field),
-    field.help ? el("small", {}, field.help) : null,
-  ));
+  const fields = (config.fields || []).map((field) => {
+    const control = intakeControl(field);
+    // A tall textarea (a pasted script) takes the whole row so its neighbours
+    // are not stretched to its height.
+    return el("label", { class: field.type === "textarea" ? (Number(field.rows) > 3 ? "wide full" : "wide") : "" },
+      el("span", {}, field.label),
+      control,
+      intakeCounter(field, control),
+      field.help ? el("small", {}, field.help) : null,
+    );
+  });
   projectIntake.replaceChildren(
     el("div", { class: "project-intake-head" },
       el("strong", {}, config.title || trPipeline(workflow.name)),

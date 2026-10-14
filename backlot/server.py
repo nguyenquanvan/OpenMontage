@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
 import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -49,6 +50,12 @@ PROJECT_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MAX_PROJECT_ID_LENGTH = 80
 MAX_PROJECT_TITLE_LENGTH = 200
 MAX_INTAKE_VALUE_LENGTH = 4_000
+MAX_BRIEF_LENGTH = 12_000
+NARRATION_WORDS_PER_MINUTE = 140
+
+
+def _fmt_thousands(number: int) -> str:
+    return f"{number:,}".replace(",", ".")
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -167,10 +174,25 @@ def _workflow_catalog() -> list[dict]:
     return workflows
 
 
-def _validate_project_intake(manifest: dict, payload: object) -> tuple[dict[str, str], str | None]:
+def _file_field_summary(path: str, text: str) -> str:
+    words = len(text.split())
+    minutes = max(1, round(words / NARRATION_WORDS_PER_MINUTE))
+    return f"có — {path}, {words} từ (~{minutes} phút ở {NARRATION_WORDS_PER_MINUTE} từ/phút)"
+
+
+def _validate_project_intake(
+    manifest: dict, payload: object
+) -> tuple[dict[str, str], str | None, dict[str, str]]:
+    """Validate intake values against the manifest and render the brief.
+
+    Returns ``(values, brief, files)``: ``values`` is what project.json
+    records, ``brief`` the filled template, and ``files`` maps a relative
+    project path to the content of each ``store: file`` field. Those fields
+    are never inlined — the intake keeps their path and the brief a summary.
+    """
     config = manifest.get("project_intake")
     if not config:
-        return {}, None
+        return {}, None, {}
     if payload is None:
         payload = {}
     if not isinstance(payload, dict):
@@ -183,14 +205,30 @@ def _validate_project_intake(manifest: dict, payload: object) -> tuple[dict[str,
         raise HTTPException(status_code=400, detail="Thông tin dự án chứa trường không hợp lệ")
 
     values: dict[str, str] = {}
+    brief_values: dict[str, str] = {}
+    files: dict[str, str] = {}
     for field in fields:
         name = field["name"]
         raw = payload.get(name, field.get("default", ""))
+        if raw is not None and not isinstance(raw, (str, int, float)):
+            raise HTTPException(status_code=400, detail=f"{field['label']} không hợp lệ")
         value = str(raw).strip() if raw is not None else ""
+        # Normalise newlines once, so the length check, the word count and the
+        # file write all see the same text. A lone surrogate is valid JSON but
+        # cannot be written as UTF-8, so it is refused before any disk write.
+        value = value.replace("\r\n", "\n").replace("\r", "\n")
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise HTTPException(status_code=400, detail=f"{field['label']} chứa ký tự không hợp lệ") from exc
         if field.get("required") and not value:
             raise HTTPException(status_code=400, detail=f"Hãy điền {field['label']}")
-        if len(value) > MAX_INTAKE_VALUE_LENGTH:
-            raise HTTPException(status_code=400, detail=f"{field['label']} quá dài")
+        limit = int(field.get("max_length") or MAX_INTAKE_VALUE_LENGTH)
+        if len(value) > limit:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field['label']} quá dài (tối đa {_fmt_thousands(limit)} ký tự)",
+            )
         if field.get("type") == "select":
             allowed = {str(option["value"]) for option in field.get("options", [])}
             if value and value not in allowed:
@@ -206,14 +244,31 @@ def _validate_project_intake(manifest: dict, payload: object) -> tuple[dict[str,
                 raise HTTPException(status_code=400, detail=f"{field['label']} quá nhỏ")
             if field.get("max") is not None and number > field["max"]:
                 raise HTTPException(status_code=400, detail=f"{field['label']} quá lớn")
+        if field.get("store") == "file":
+            path = f"inputs/{name.replace('_', '-')}.md" if value else ""
+            if value:
+                files[path] = value
+            values[name] = path
+            brief_values[name] = _file_field_summary(path, value) if value else "không có"
+            continue
         values[name] = value
+        brief_values[name] = value
 
     brief = str(config.get("brief_template") or "")
-    for name, value in values.items():
+    for name, value in brief_values.items():
         brief = brief.replace("{" + name + "}", value)
-    if len(brief) > 12_000:
+    if len(brief) > MAX_BRIEF_LENGTH:
         raise HTTPException(status_code=400, detail="Brief dự án quá dài")
-    return values, brief.strip() or None
+    return values, brief.strip() or None, files
+
+
+def _write_intake_files(project_dir: Path, files: dict[str, str]) -> None:
+    """Write ``store: file`` intake content under the project: UTF-8, LF, no BOM."""
+    for relative, content in files.items():
+        target = project_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content + "\n")
 
 
 # Watch-loop hot path: pure string comparison, no per-path filesystem calls
@@ -396,22 +451,34 @@ def create_app() -> FastAPI:
         if project_dir.exists():
             raise HTTPException(status_code=409, detail="Mã dự án đã tồn tại")
 
-        intake, initial_brief = _validate_project_intake(manifest, payload.get("intake"))
+        intake, initial_brief, intake_files = _validate_project_intake(manifest, payload.get("intake"))
         intake_config = manifest.get("project_intake") or {}
         style_playbook = intake_config.get("style_playbook")
         style_field = intake_config.get("style_playbook_field")
         if isinstance(style_field, str) and intake.get(style_field):
             style_playbook = intake[style_field]
-        await asyncio.to_thread(
-            init_project,
-            project_id,
-            title=title,
-            pipeline_type=pipeline_type,
-            pipeline_dir=PROJECTS_DIR,
-            style_playbook=style_playbook,
-            initial_brief=initial_brief,
-            intake=intake or None,
-        )
+        try:
+            await asyncio.to_thread(
+                init_project,
+                project_id,
+                title=title,
+                pipeline_type=pipeline_type,
+                pipeline_dir=PROJECTS_DIR,
+                style_playbook=style_playbook,
+                initial_brief=initial_brief,
+                intake=intake or None,
+            )
+            await asyncio.to_thread(_write_intake_files, project_dir, intake_files)
+        except Exception as exc:
+            # This request created project_dir (the 409 check above proved it
+            # was absent), so remove the half-made workspace; the user can
+            # simply resubmit instead of being told the id is taken.
+            shutil.rmtree(project_dir, ignore_errors=True)
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(
+                status_code=500, detail=f"Không tạo được dự án: {exc}"
+            ) from exc
         _invalidate_summary(project_id)
         hub.publish(project_id)
         return {

@@ -197,6 +197,13 @@
               "default": { "type": ["string", "number"] },
               "min": { "type": "number" },
               "max": { "type": "number" },
+              "rows": { "type": "integer", "minimum": 1, "description": "Textarea height in rows." },
+              "max_length": { "type": "integer", "minimum": 1, "description": "Per-field character limit; the server default applies when absent." },
+              "store": {
+                "type": "string",
+                "enum": ["file"],
+                "description": "file: saved to projects/<id>/inputs/<name>.md and summarised in the brief instead of inlined."
+              },
               "options": {
                 "type": "array",
                 "items": {

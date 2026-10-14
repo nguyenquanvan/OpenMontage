@@ -35,6 +35,10 @@ This style replaces the alternating visual grammar above:
 - Each image brief names one concrete subject (a bowl of Greek yogurt, a thigh muscle cross-section, a grip dynamometer) plus simple arrows or circles. In `overlay` text mode the brief contains no words to draw.
 - Recurring people are generic figures, never named patients or an invented doctor.
 
+## Own Script Mode (Kịch bản có sẵn)
+
+When the brief says `Kịch bản có sẵn: có — inputs/own-script.md ...`, scene boundaries follow the script's paragraphs: a long paragraph may span several scenes, but no scene straddles two paragraphs. Nothing else in this skill changes.
+
 ## Reference Handling
 
 Translate reference observations into general properties such as warm cream backgrounds, restrained motion, and image-text layouts. Do not recreate distinctive frames, thumbnails, wording, or shot order.

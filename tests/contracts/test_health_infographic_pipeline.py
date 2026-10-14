@@ -70,6 +70,39 @@ def test_health_stage_skills_enforce_evidence_and_runtime_governance() -> None:
     assert "không sao chép" in manifest["project_intake"]["brief_template"]
 
 
+def test_own_script_field_is_optional_and_stored_as_file() -> None:
+    intake = load_pipeline("health-infographic")["project_intake"]
+    fields = {field["name"]: field for field in intake["fields"]}
+
+    own_script = fields["own_script"]
+    assert own_script["required"] is False
+    assert own_script["type"] == "textarea"
+    assert own_script["store"] == "file"
+    assert own_script["max_length"] == 200000
+    assert own_script["rows"] == 10
+    assert "{own_script}" in intake["brief_template"]
+    assert "không viết lại" in intake["brief_template"]
+
+
+def test_own_script_mode_is_taught_to_every_affected_director() -> None:
+    manifest = load_pipeline("health-infographic")
+    skills = {stage["name"]: stage["skill"] for stage in manifest["stages"]}
+    skills["executive_producer"] = manifest["orchestration"]["skill"]
+
+    for name in ("executive_producer", "research", "proposal", "script", "compose", "publish"):
+        body = (ROOT / "skills" / f"{skills[name]}.md").read_text(encoding="utf-8")
+        assert "Kịch bản có sẵn" in body or "own-script.md" in body, name
+
+
+def test_executive_producer_stops_when_own_script_duplicates_reference_transcript() -> None:
+    skill = load_pipeline("health-infographic")["orchestration"]["skill"]
+    body = (ROOT / "skills" / f"{skill}.md").read_text(encoding="utf-8")
+
+    assert "transcript_fetcher" in body
+    assert "awaiting_human" in body
+    assert "Chạy thẳng" in body
+
+
 def test_professional_motion_components_are_registered() -> None:
     explainer = (ROOT / "remotion-composer" / "src" / "Explainer.tsx").read_text(encoding="utf-8")
     scene_docs = (ROOT / "remotion-composer" / "SCENE_TYPES.md").read_text(encoding="utf-8")

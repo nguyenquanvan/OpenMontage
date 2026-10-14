@@ -59,9 +59,10 @@ def detect_root() -> Path | None:
 
 def python_for(root: Path) -> Path | None:
     """The interpreter that runs this ComfyUI: the portable's embedded Python or the checkout's venv."""
-    portable = root.parent / "python_embeded" / ("python.exe" if os.name == "nt" else "python")
-    if portable.is_file():
-        return portable
+    for name in ("python.exe", "python"):
+        portable = root.parent / "python_embeded" / name
+        if portable.is_file():
+            return portable
     for relative in ("Scripts/python.exe", "bin/python"):
         for venv in (".venv", "venv"):
             python = root / venv / relative
